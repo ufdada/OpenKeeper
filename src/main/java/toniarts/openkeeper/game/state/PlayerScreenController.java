@@ -290,8 +290,8 @@ public final class PlayerScreenController implements IPlayerScreenController {
 
         int mapWidth = gcs.getMapClientService().getMapData().getWidth();
         int mapHeight = gcs.getMapClientService().getMapData().getHeight();
-        float worldX = Math.min(mapWidth * WorldUtils.TILE_WIDTH, Math.max(0, mapPreviewTileX * WorldUtils.TILE_WIDTH + WorldUtils.TILE_WIDTH));
-        float worldZ = Math.min(mapHeight * WorldUtils.TILE_WIDTH, Math.max(0, mapPreviewTileY * WorldUtils.TILE_WIDTH + WorldUtils.TILE_WIDTH));
+        float worldX = Math.min(mapWidth * WorldUtils.TILE_WIDTH, Math.max(0, mapPreviewTileX * WorldUtils.TILE_WIDTH + WorldUtils.TILE_WIDTH / 2f));
+        float worldZ = Math.min(mapHeight * WorldUtils.TILE_WIDTH, Math.max(0, mapPreviewTileY * WorldUtils.TILE_WIDTH + WorldUtils.TILE_WIDTH / 2f));
         float height = Math.max(2f, Math.min(mapWidth, mapHeight) * 0.5f);
 
         applyTopDownCamera(worldX, worldZ, height);
@@ -978,10 +978,12 @@ public final class PlayerScreenController implements IPlayerScreenController {
                 return;
             }
 
+            BufferedImage selectedTilesImage = MinimapController.renderSelectedTiles(baseImage, mapData, state.getPlayerId());
+
             EntityData entityData = state.getEntityData();
             List<MinimapController.CreatureMarker> markers = MinimapController.collectCreatureMarkers(entityData);
 
-            BufferedImage minimapImage = MinimapController.applyCreatureMarkers(state.getKwdFile(), mapData, baseImage, markers);
+            BufferedImage minimapImage = MinimapController.applyCreatureMarkers(state.getKwdFile(), mapData, selectedTilesImage, markers);
             if (minimapImage == null) {
                 return;
             }

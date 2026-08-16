@@ -117,6 +117,41 @@ public final class MinimapController {
         return addCreatureMarkersToMap(kwd, mapData, baseImage, markers);
     }
 
+    public static BufferedImage renderSelectedTiles(final BufferedImage sourceImage,
+            final IMapDataInformation<IMapTileInformation> mapData,
+            final short playerId) {
+        if (sourceImage == null || mapData == null) {
+            return sourceImage;
+        }
+
+        BufferedImage rendered = new BufferedImage(sourceImage.getWidth(), sourceImage.getHeight(), TYPE_INT_ARGB);
+        Graphics2D g = rendered.createGraphics();
+        g.drawImage(sourceImage, 0, 0, null);
+
+        final int cellWidth = Math.max(1, sourceImage.getWidth() / Math.max(1, mapData.getWidth()));
+        final int cellHeight = Math.max(1, sourceImage.getHeight() / Math.max(1, mapData.getHeight()));
+        final Color selectedColor = new Color(0, 255, 255, 255);
+
+        for (int y = 0; y < mapData.getHeight(); y++) {
+            for (int x = 0; x < mapData.getWidth(); x++) {
+                IMapTileInformation tile = mapData.getTile(x, y);
+                if (tile == null || !tile.isSelected(playerId)) {
+                    continue;
+                }
+
+                int px = x * cellWidth;
+                int py = y * cellHeight;
+                g.setColor(selectedColor);
+                int offsetX = cellWidth;
+                int offsetY = (cellHeight + cellHeight / 2);
+                g.fillRect(px + offsetX, py + offsetY, cellWidth, cellHeight);
+            }
+        }
+
+        g.dispose();
+        return rendered;
+    }
+
     /**
      * FIXME: This is a copy of the MapThumbnailGenerator.generateMap method, but it uses the runtime map data instead of the KWD map data. This is a temporary solution until we can figure out how to properly handle this.
      * 
