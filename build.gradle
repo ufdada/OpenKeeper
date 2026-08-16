@@ -79,6 +79,8 @@ dependencies {
     implementation "com.simsilica:sio2:1.8.0"
     implementation "com.simsilica:sim-ethereal:1.8.0"
 
+    testImplementation 'junit:junit:4.13.2'
+
     // Assets sub-project
     runtimeOnly project(':assets')
 }

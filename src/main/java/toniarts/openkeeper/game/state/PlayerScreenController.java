@@ -53,6 +53,7 @@ import de.lessvoid.nifty.tools.SizeValueType;
 import toniarts.openkeeper.Main;
 import toniarts.openkeeper.game.component.*;
 import toniarts.openkeeper.game.controller.creature.CreatureState;
+import toniarts.openkeeper.game.controller.map.MinimapController;
 import toniarts.openkeeper.game.data.ResearchableEntity;
 import toniarts.openkeeper.game.sound.GlobalCategory;
 import toniarts.openkeeper.game.sound.GlobalType;
@@ -100,9 +101,11 @@ public final class PlayerScreenController implements IPlayerScreenController {
     private static final Logger logger = System.getLogger(PlayerScreenController.class.getName());
 
     public static final float SCREEN_UPDATE_INTERVAL = 0.250f;
+    private static final float MINIMAP_UPDATE_INTERVAL = 0.050f;
     private static final java.awt.Color RESEARCH_COLOR = new java.awt.Color(0.569f, 0.106f, 0.31f, 0.6f);
     
     public float lastUpdate = 0;
+    private float minimapLastUpdate = 0;
 
     private com.simsilica.es.EntitySet mapEntities;
     private String lastMinimapImageKey = null;
@@ -132,6 +135,7 @@ public final class PlayerScreenController implements IPlayerScreenController {
     @Override
     public void update(float tpf) {
         lastUpdate += tpf;
+        minimapLastUpdate += tpf;
 
         if (lastUpdate >= SCREEN_UPDATE_INTERVAL) {
             if (creatureCardManager != null) {
@@ -140,7 +144,11 @@ public final class PlayerScreenController implements IPlayerScreenController {
             lastUpdate = 0;
         }
 
-        // Event-driven map updates: if entityData is available, check for map tile changes
+        if (minimapLastUpdate >= MINIMAP_UPDATE_INTERVAL) {
+            updateMinimap();
+            minimapLastUpdate = 0;
+        }
+
         try {
             if (mapEntities != null && mapEntities.applyChanges()) {
                 updateMinimap();
@@ -858,23 +866,27 @@ public final class PlayerScreenController implements IPlayerScreenController {
                 return;
             }
 
-            // Generate buffered image for the minimap (in-memory)
-            BufferedImage bi = toniarts.openkeeper.utils.MapThumbnailGenerator.generateMapFromMap(state.getKwdFile(), mapData, 256, 256, true);
-            if (bi == null) {
+            BufferedImage baseImage = MinimapController.createMinimapImage(state.getKwdFile(), mapData, 256, 256, true);
+            if (baseImage == null) {
                 return;
             }
 
-            // Convert BufferedImage to a JME texture and add to DesktopAssetManager cache
+            EntityData entityData = state.getEntityData();
+            List<MinimapController.CreatureMarker> markers = MinimapController.collectCreatureMarkers(entityData);
+
+            BufferedImage minimapImage = MinimapController.applyCreatureMarkers(state.getKwdFile(), mapData, baseImage, markers);
+            if (minimapImage == null) {
+                return;
+            }
+
             if (state.assetManager instanceof DesktopAssetManager) {
                 try {
                     AWTLoader loader = new AWTLoader();
-                    Texture tex = new Texture2D(loader.load(bi, false));
+                    Texture tex = new Texture2D(loader.load(minimapImage, false));
 
-                    // Use a unique cache key per update so Nifty picks up the new texture
                     String key = "MinimapGenerated-" + System.nanoTime();
                     ((DesktopAssetManager) state.assetManager).addToCache(new TextureKey(key, false), tex);
 
-                    // Create Nifty image from the cached texture and set it
                     NiftyImage niftyImage = nifty.createImage(key, true);
                     Element element = nifty.getScreen(SCREEN_HUD_ID).findElementById("minimap");
                     if (element != null) {

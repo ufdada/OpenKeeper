@@ -20,6 +20,7 @@ import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
+import static java.awt.image.BufferedImage.TYPE_INT_ARGB;
 import static java.awt.image.BufferedImage.TYPE_INT_RGB;
 import java.awt.image.ColorModel;
 import java.awt.image.DataBuffer;
@@ -37,7 +38,9 @@ import java.lang.System.Logger.Level;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import javax.imageio.ImageIO;
 import toniarts.openkeeper.tools.convert.AssetsConverter;
@@ -56,10 +59,10 @@ import toniarts.openkeeper.tools.convert.map.Tile;
  * @author Toni Helenius <helenius.toni@gmail.com>
  */
 public final class MapThumbnailGenerator {
-
     private static final Logger logger = System.getLogger(MapThumbnailGenerator.class.getName());
     
     private static final String PALETTE_IMAGE = "Textures".concat(File.separator).concat("Thumbnails").concat(File.separator).concat("MapColours.png");
+    private static final int CREATURE_MARKER_RADIUS = 2;
     private static ColorModel cm;
     private static Map<Short, Color> playerColors;
 
@@ -67,7 +70,7 @@ public final class MapThumbnailGenerator {
         // Nope
     }
 
-    private static ColorModel getColorModel() {
+    public static ColorModel getColorModel() {
         if (cm == null) {
             cm = readPalette();
         }
