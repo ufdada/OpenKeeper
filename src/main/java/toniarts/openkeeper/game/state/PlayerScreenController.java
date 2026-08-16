@@ -273,10 +273,9 @@ public final class PlayerScreenController implements IPlayerScreenController {
         int mapHeight = gcs.getMapClientService().getMapData().getHeight();
         float centerX = (mapWidth * WorldUtils.TILE_WIDTH) / 2f;
         float centerZ = (mapHeight * WorldUtils.TILE_WIDTH) / 2f;
-        float height = Math.max(10f, Math.max(mapWidth, mapHeight) * 2f);
+        float height = Math.max(2f, Math.min(mapWidth, mapHeight) * 0.5f);
 
-        state.app.getCamera().setLocation(new Vector3f(centerX, height, centerZ));
-        state.app.getCamera().lookAt(new Vector3f(centerX, 0, centerZ), Vector3f.UNIT_Y);
+        applyTopDownCamera(centerX, centerZ, height);
     }
 
     private void updateMapCameraFromPreview() {
@@ -291,12 +290,20 @@ public final class PlayerScreenController implements IPlayerScreenController {
 
         int mapWidth = gcs.getMapClientService().getMapData().getWidth();
         int mapHeight = gcs.getMapClientService().getMapData().getHeight();
-        float worldX = Math.min(mapWidth * WorldUtils.TILE_WIDTH, Math.max(0, mapPreviewTileX * WorldUtils.TILE_WIDTH + WorldUtils.TILE_WIDTH / 2f));
-        float worldZ = Math.min(mapHeight * WorldUtils.TILE_WIDTH, Math.max(0, mapPreviewTileY * WorldUtils.TILE_WIDTH + WorldUtils.TILE_WIDTH / 2f));
-        float height = Math.max(10f, state.app.getCamera().getLocation().y);
+        float worldX = Math.min(mapWidth * WorldUtils.TILE_WIDTH, Math.max(0, mapPreviewTileX * WorldUtils.TILE_WIDTH + WorldUtils.TILE_WIDTH));
+        float worldZ = Math.min(mapHeight * WorldUtils.TILE_WIDTH, Math.max(0, mapPreviewTileY * WorldUtils.TILE_WIDTH + WorldUtils.TILE_WIDTH));
+        float height = Math.max(2f, Math.min(mapWidth, mapHeight) * 0.5f);
 
-        state.app.getCamera().setLocation(new Vector3f(worldX, height, worldZ));
-        state.app.getCamera().lookAt(new Vector3f(worldX, 0, worldZ), Vector3f.UNIT_Y);
+        applyTopDownCamera(worldX, worldZ, height);
+    }
+
+    private void applyTopDownCamera(float targetX, float targetZ, float height) {
+        if (state == null || state.app == null) {
+            return;
+        }
+
+        state.app.getCamera().setLocation(new Vector3f(targetX, height, targetZ + 0.1f));
+        state.app.getCamera().lookAt(new Vector3f(targetX, 0, targetZ), Vector3f.UNIT_Y);
     }
 
     @Override
