@@ -371,7 +371,7 @@
             </panel>
         </layer>
 
-        <layer childLayout="overlay" id="fullscreenMapOverlay" visible="false" backgroundColor="#000d">
+        <layer childLayout="overlay" id="fullscreenMapOverlay" visible="false" backgroundColor="#0000">
             <panel width="100%" height="100%" childLayout="horizontal" padding="18px,18px,18px,18px">
                 <panel id="fullscreenMapImagePanel" width="66%" height="100%" childLayout="center" visibleToMouse="true">
                     <image id="fullscreenMapImage" width="100%" height="100%" align="center" valign="center" />
