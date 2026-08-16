@@ -42,6 +42,8 @@ import java.util.Map;
 import javax.imageio.ImageIO;
 import toniarts.openkeeper.tools.convert.AssetsConverter;
 import toniarts.openkeeper.tools.convert.map.KwdFile;
+import toniarts.openkeeper.game.map.IMapDataInformation;
+import toniarts.openkeeper.game.map.IMapTileInformation;
 import toniarts.openkeeper.tools.convert.map.Terrain;
 import toniarts.openkeeper.tools.convert.map.Tile;
 
@@ -153,6 +155,67 @@ public final class MapThumbnailGenerator {
         return bi;
     }
 
+    /**
+     * FIXME: This is a copy of the generateMap method, but it uses the runtime map data instead of the KWD map data. This is a temporary solution until we can figure out how to properly handle this.
+     * 
+     * Generate a map image from runtime map data (IMapDataInformation). Uses
+     * the provided KwdFile for terrain lookup and palette.
+     */
+    public static BufferedImage generateMapFromMap(final KwdFile kwd, final IMapDataInformation<IMapTileInformation> mapData, final Integer width, final Integer height, final boolean preserveAspectRatio) {
+
+        // Determine wanted width/height based on runtime map size
+        int imageWidth = mapData.getWidth();
+        int imageHeight = mapData.getHeight();
+        int drawWidth = mapData.getWidth();
+        int drawHeight = mapData.getHeight();
+        if (width != null || height != null) {
+            imageWidth = (width != null ? width : imageWidth);
+            imageHeight = (height != null ? height : imageHeight);
+
+            if (preserveAspectRatio) {
+                if (width != null && height == null) {
+                    imageHeight = imageWidth * mapData.getHeight() / mapData.getWidth();
+                } else if (height != null && width == null) {
+                    imageWidth = imageHeight * mapData.getWidth() / mapData.getHeight();
+                } else {
+                    int byWidthArea = (imageWidth * mapData.getHeight() / mapData.getWidth()) * imageWidth;
+                    int byHeightArea = (imageHeight * mapData.getWidth() / mapData.getHeight()) * imageHeight;
+                    if (byWidthArea > byHeightArea) {
+                        imageHeight = imageWidth * mapData.getHeight() / mapData.getWidth();
+                    } else {
+                        imageWidth = imageHeight * mapData.getWidth() / mapData.getHeight();
+                    }
+                }
+            }
+
+            drawWidth = mapData.getWidth() * (int) Math.ceil((float) imageWidth / mapData.getWidth());
+            drawHeight = mapData.getHeight() * (int) Math.ceil((float) imageHeight / mapData.getHeight());
+        }
+
+        int[] bandOffsets = new int[1];
+        PixelInterleavedSampleModel sampleModel = new PixelInterleavedSampleModel(DataBuffer.TYPE_BYTE,
+                drawWidth, drawHeight,
+                1,
+                drawWidth,
+                bandOffsets);
+        WritableRaster raster = Raster.createWritableRaster(sampleModel, null);
+        BufferedImage bi = new BufferedImage(getColorModel(), raster, false, null);
+        byte[] data = (byte[]) ((DataBufferByte) raster.getDataBuffer()).getData();
+
+        drawMapFromMap(kwd, mapData, data, drawWidth / mapData.getWidth(), drawHeight / mapData.getHeight());
+
+        if (drawWidth != imageWidth || drawHeight != imageHeight) {
+            BufferedImage newImage = new BufferedImage(imageWidth, imageHeight, TYPE_INT_RGB);
+            Graphics2D g = newImage.createGraphics();
+            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+            g.drawImage(bi, 0, 0, newImage.getWidth(), newImage.getHeight(), 0, 0, bi.getWidth(), bi.getHeight(), null);
+            g.dispose();
+            return newImage;
+        }
+
+        return bi;
+    }
+
     private static ColorModel readPalette() {
         try {
             Path palettePath = Paths.get(PathUtils.getRealFileName(AssetsConverter.getAssetsFolder(), PALETTE_IMAGE));
@@ -248,6 +311,67 @@ public final class MapThumbnailGenerator {
                     }
                 }
 
+            }
+        }
+    }
+
+    /**
+     * FIXME: This is a copy of the drawMap method, but it uses the runtime map data instead of the KWD map data. This is a temporary solution until we can figure out how to properly handle this.
+     * 
+     * Draws the map from the given data
+     *
+     * @param kwd      the KWD file
+     * @param mapData  the map data
+     * @param data     the data to draw
+     * @param xScale   the x scale
+     * @param yScale   the y scale
+     */
+    private static void drawMapFromMap(final KwdFile kwd, final IMapDataInformation<IMapTileInformation> mapData, byte[] data, int xScale, int yScale) {
+
+        for (int y = 0; y < mapData.getHeight(); y++) {
+            for (int x = 0; x < mapData.getWidth(); x++) {
+                IMapTileInformation tile = mapData.getTile(x, y);
+                byte value = 0;
+
+                // Water and lava
+                Terrain terrainTile = kwd.getTerrain(tile.getTerrainId());
+                if (x == 0 || y == 0 || y == mapData.getHeight() - 1 || x == mapData.getWidth() - 1) {
+                    value = 46; // Edge of maps
+                } else if (kwd.getMap().getLava().getTerrainId() == tile.getTerrainId()) {
+                    value = 10; // Lava
+                } else if (kwd.getMap().getWater().getTerrainId() == tile.getTerrainId()) {
+                    value = 8; // Water
+                } // Other non-ownable tiles
+                else if (terrainTile.getFlags().contains(Terrain.TerrainFlag.IMPENETRABLE)) {
+                    if (terrainTile.getGoldValue() > 0) {
+                        value = 4; // Gems
+                    } else {
+                        value = 2; // Impenetrable
+                    }
+                } else if (terrainTile.getGoldValue() > 0) {
+                    value = 6; // Gold
+                } else if (!terrainTile.getFlags().contains(Terrain.TerrainFlag.OWNABLE)) {
+                    if (terrainTile.getFlags().contains(Terrain.TerrainFlag.SOLID)) {
+                        value = 3; // Rock
+                    } else {
+                        value = 1; // Dirt path
+                    }
+                } // Owned tiles & buildings
+                else if (terrainTile.getFlags().contains(Terrain.TerrainFlag.ROOM)) {
+                    value = (byte) (35 + tile.getOwnerId()); // Building + owned color
+                } else if (terrainTile.getFlags().contains(Terrain.TerrainFlag.SOLID)) {
+                    value = (byte) (15 + tile.getOwnerId()); // Wall + owned color
+                } else if (terrainTile.getFlags().contains(Terrain.TerrainFlag.OWNABLE)) {
+                    value = (byte) (25 + tile.getOwnerId()); // Path + owned color
+                } else {
+                    logger.log(Level.WARNING, "Unknown runtime tile on {0} at tile {1}, {2}!", new Object[]{kwd, x, y});
+                }
+
+                for (int yScaling = 0; yScaling < yScale; yScaling++) {
+                    for (int xScaling = 0; xScaling < xScale; xScaling++) {
+                        data[(y * yScale + yScaling) * mapData.getWidth() * xScale + (x * xScale + xScaling)] = value;
+                    }
+                }
             }
         }
     }

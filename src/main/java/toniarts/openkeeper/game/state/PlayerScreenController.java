@@ -67,6 +67,8 @@ import toniarts.openkeeper.tools.convert.map.*;
 import toniarts.openkeeper.tools.convert.map.CreatureSpell;
 import toniarts.openkeeper.utils.AssetUtils;
 import toniarts.openkeeper.utils.Utils;
+import toniarts.openkeeper.game.map.IMapDataInformation;
+import toniarts.openkeeper.game.map.IMapTileInformation;
 import toniarts.openkeeper.view.PlayerInteractionState;
 import toniarts.openkeeper.view.PlayerInteractionState.InteractionState.Type;
 import toniarts.openkeeper.view.PossessionInteractionState;
@@ -102,6 +104,9 @@ public final class PlayerScreenController implements IPlayerScreenController {
     
     public float lastUpdate = 0;
 
+    private com.simsilica.es.EntitySet mapEntities;
+    private String lastMinimapImageKey = null;
+
     private PlayerState state;
     private Nifty nifty;
     private Screen screen;
@@ -134,6 +139,15 @@ public final class PlayerScreenController implements IPlayerScreenController {
             }
             lastUpdate = 0;
         }
+
+        // Event-driven map updates: if entityData is available, check for map tile changes
+        try {
+            if (mapEntities != null && mapEntities.applyChanges()) {
+                updateMinimap();
+            }
+        } catch (Exception e) {
+            // ignore
+        }
     }
 
     @Override
@@ -149,6 +163,14 @@ public final class PlayerScreenController implements IPlayerScreenController {
         // The screen controller might sometimes stay in memory
         // So make sure we clean these up or we end up cumulating a lot of uncollectable garbage (memory-leak)
         state = null;
+        if (mapEntities != null) {
+            try {
+                mapEntities.release();
+            } catch (Exception e) {
+                // ignore
+            }
+            mapEntities = null;
+        }
         entityData = null;
         screen = null;
     }
@@ -737,6 +759,17 @@ public final class PlayerScreenController implements IPlayerScreenController {
 //        });
         populateSpellTab();
         populateManufactureTab();
+        // Ensure minimap is generated and shown
+        updateMinimap();
+
+        // If we have access to entity data, register an EntitySet to track map tile changes
+        if (entityData != null) {
+            try {
+                mapEntities = entityData.getEntities(MapTile.class);
+            } catch (Exception e) {
+                // ignore if MapTile not available in this context
+            }
+        }
 //        FlowLayoutControl contentPanel = hud.findElementById("tab-workshop-content").getControl(FlowLayoutControl.class);
 //        contentPanel.removeAll();
 //        for (final Door door : state.getAvailableDoors()) {
@@ -810,6 +843,54 @@ public final class PlayerScreenController implements IPlayerScreenController {
                 }.build(element).getControl(ResearchEffectControl.class);
                 researchControl.initJme(state.app);
             }
+        }
+    }
+
+    private void updateMinimap() {
+        try {
+            toniarts.openkeeper.game.state.GameClientState gcs = state.stateManager.getState(toniarts.openkeeper.game.state.GameClientState.class);
+            if (gcs == null) {
+                return;
+            }
+
+            IMapDataInformation<IMapTileInformation> mapData = gcs.getMapClientService().getMapData();
+            if (mapData == null) {
+                return;
+            }
+
+            state
+
+            // Generate buffered image for the minimap (in-memory)
+            BufferedImage bi = toniarts.openkeeper.utils.MapThumbnailGenerator.generateMapFromMap(state.getKwdFile(), mapData, 256, 256, true);
+            if (bi == null) {
+                return;
+            }
+
+            // Convert BufferedImage to a JME texture and add to DesktopAssetManager cache
+            if (state.assetManager instanceof DesktopAssetManager) {
+                try {
+                    AWTLoader loader = new AWTLoader();
+                    Texture tex = new Texture2D(loader.load(bi, false));
+
+                    // Use a unique cache key per update so Nifty picks up the new texture
+                    String key = "MinimapGenerated-" + System.nanoTime();
+                    ((DesktopAssetManager) state.assetManager).addToCache(new TextureKey(key, false), tex);
+
+                    // Create Nifty image from the cached texture and set it
+                    NiftyImage niftyImage = nifty.createImage(key, true);
+                    Element element = nifty.getScreen(SCREEN_HUD_ID).findElementById("minimap");
+                    if (element != null) {
+                        ImageRenderer renderer = element.getRenderer(ImageRenderer.class);
+                        renderer.setImage(niftyImage);
+                        element.getParent().layoutElements();
+                    }
+                    lastMinimapImageKey = key;
+                } catch (Exception e) {
+                    // Fall back silently if conversion fails
+                }
+            }
+        } catch (Exception e) {
+            // Ignore minimap failures
         }
     }
 
