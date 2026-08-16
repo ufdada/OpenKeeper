@@ -858,8 +858,6 @@ public final class PlayerScreenController implements IPlayerScreenController {
                 return;
             }
 
-            state
-
             // Generate buffered image for the minimap (in-memory)
             BufferedImage bi = toniarts.openkeeper.utils.MapThumbnailGenerator.generateMapFromMap(state.getKwdFile(), mapData, 256, 256, true);
             if (bi == null) {
