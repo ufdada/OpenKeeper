@@ -7,6 +7,7 @@ import java.util.Arrays;
 import java.util.List;
 import org.junit.Test;
 import static org.junit.Assert.*;
+import toniarts.openkeeper.game.controller.map.MinimapController;
 
 public class MapThumbnailGeneratorTest {
 
@@ -18,12 +19,12 @@ public class MapThumbnailGeneratorTest {
         graphics.fillRect(0, 0, image.getWidth(), image.getHeight());
         graphics.dispose();
 
-        List<MapThumbnailGenerator.CreatureMarker> markers = Arrays.asList(
-                new MapThumbnailGenerator.CreatureMarker(1, 2, (short) 3, 1),
-                new MapThumbnailGenerator.CreatureMarker(2, 4, (short) 5, 2)
+        List<MinimapController.CreatureMarker> markers = Arrays.asList(
+                new MinimapController.CreatureMarker(1, 2, (short) 3, 1),
+                new MinimapController.CreatureMarker(2, 4, (short) 5, 2)
         );
 
-        BufferedImage result = MapThumbnailGenerator.renderCreatureMarkers(image, markers, 8, 8, 2, 2);
+        BufferedImage result = MinimapController.renderCreatureMarkers(image, markers, 8, 8, 2, 2);
 
         assertNotNull(result);
         assertEquals(8, result.getWidth());

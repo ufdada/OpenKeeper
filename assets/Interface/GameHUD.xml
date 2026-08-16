@@ -370,6 +370,20 @@
                 </panel>
             </panel>
         </layer>
+
+        <layer childLayout="overlay" id="fullscreenMapOverlay" visible="false" backgroundColor="#000d">
+            <panel width="100%" height="100%" childLayout="horizontal" padding="18px,18px,18px,18px">
+                <panel id="fullscreenMapImagePanel" width="66%" height="100%" childLayout="center" visibleToMouse="true">
+                    <image id="fullscreenMapImage" width="100%" height="100%" align="center" valign="center" />
+                </panel>
+                <panel width="34%" height="100%" childLayout="vertical" paddingLeft="18px">
+                    <panel height="*" width="100%" childLayout="center">
+                        <image id="fullscreenMapPreview" width="180px" height="180px" align="center" valign="center" />
+                    </panel>
+                </panel>
+            </panel>
+        </layer>
+
         <!-- console layer-->
         <layer childLayout="vertical">
             <control id="console" name="nifty-console" style="custom-console" lines="25" visible="false">

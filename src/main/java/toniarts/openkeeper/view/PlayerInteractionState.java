@@ -548,6 +548,9 @@ public abstract class PlayerInteractionState extends AbstractPauseAwareState {
             public void onMouseMotionEvent(MouseMotionEvent evt) {
                 mousePosition.set(evt.getX(), evt.getY());
                 keeperHandState.setPosition(evt.getX(), evt.getY());
+                if (stateManager.getState(PlayerState.class) != null) {
+                    stateManager.getState(PlayerState.class).getScreen().updateMapHover(evt.getX(), evt.getY());
+                }
 
                 timeFromLastUpdate = 0;
                 updateStateFlags();
@@ -721,8 +724,12 @@ public abstract class PlayerInteractionState extends AbstractPauseAwareState {
                     }
                 }
 
-                if (evt.isPressed() && evt.getKeyCode() == (int)Settings.Setting.TOGGLE_GUI.getDefaultValue()) {
+                if (evt.isPressed() && evt.getKeyCode() == (int) Settings.Setting.TOGGLE_GUI.getDefaultValue()) {
                     stateManager.getState(PlayerState.class).getScreen().toggleGui();
+                }
+
+                if (evt.isPressed() && evt.getKeyCode() == (int) Settings.Setting.MAP.getDefaultValue()) {
+                    stateManager.getState(PlayerState.class).getScreen().toggleMapView();
                 }
 
             }

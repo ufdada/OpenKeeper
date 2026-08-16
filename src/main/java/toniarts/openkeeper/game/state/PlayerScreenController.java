@@ -67,7 +67,9 @@ import toniarts.openkeeper.tools.convert.AssetsConverter;
 import toniarts.openkeeper.tools.convert.map.*;
 import toniarts.openkeeper.tools.convert.map.CreatureSpell;
 import toniarts.openkeeper.utils.AssetUtils;
+import toniarts.openkeeper.utils.MapPreviewUtils;
 import toniarts.openkeeper.utils.Utils;
+import toniarts.openkeeper.utils.WorldUtils;
 import toniarts.openkeeper.game.map.IMapDataInformation;
 import toniarts.openkeeper.game.map.IMapTileInformation;
 import toniarts.openkeeper.view.PlayerInteractionState;
@@ -109,6 +111,11 @@ public final class PlayerScreenController implements IPlayerScreenController {
 
     private com.simsilica.es.EntitySet mapEntities;
     private String lastMinimapImageKey = null;
+    private boolean fullscreenMapVisible = false;
+    private int mapPreviewTileX = 0;
+    private int mapPreviewTileY = 0;
+    private Vector3f savedCameraLocation;
+    private com.jme3.math.Quaternion savedCameraRotation;
 
     private PlayerState state;
     private Nifty nifty;
@@ -197,6 +204,99 @@ public final class PlayerScreenController implements IPlayerScreenController {
             nifty.gotoScreen(SCREEN_EMPTY_ID);
         else
             nifty.gotoScreen(SCREEN_HUD_ID);
+    }
+
+    public void toggleMapView() {
+        if (state == null || nifty == null) {
+            return;
+        }
+
+        fullscreenMapVisible = !fullscreenMapVisible;
+        Element overlay = nifty.getScreen(SCREEN_HUD_ID).findElementById("fullscreenMapOverlay");
+        if (overlay != null) {
+            overlay.setVisible(fullscreenMapVisible);
+        }
+
+        if (fullscreenMapVisible) {
+            if (state.app != null && state.app.getCamera() != null) {
+                savedCameraLocation = state.app.getCamera().getLocation().clone();
+                savedCameraRotation = state.app.getCamera().getRotation().clone();
+                setTopDownMapCamera();
+            }
+            updateMinimap();
+        } else if (savedCameraLocation != null && savedCameraRotation != null && state.app != null) {
+            state.app.getCamera().setFrame(savedCameraLocation, savedCameraRotation);
+        }
+    }
+
+    public void updateMapHover(int screenX, int screenY) {
+        if (!fullscreenMapVisible || state == null || state.app == null) {
+            return;
+        }
+
+        Element overlay = nifty.getScreen(SCREEN_HUD_ID).findElementById("fullscreenMapOverlay");
+        if (overlay == null || !overlay.isVisible()) {
+            return;
+        }
+
+        Element mapPanel = overlay.findElementById("fullscreenMapImagePanel");
+        if (mapPanel == null) {
+            return;
+        }
+
+        int relativeX = screenX - mapPanel.getX();
+        int relativeY = screenY - mapPanel.getY();
+        if (relativeX < 0 || relativeY < 0 || relativeX > mapPanel.getWidth() || relativeY > mapPanel.getHeight()) {
+            return;
+        }
+
+        int mapWidth = state.getKwdFile().getMap().getWidth();
+        int mapHeight = state.getKwdFile().getMap().getHeight();
+        int hoverX = Math.max(0, Math.min(mapWidth - 1, (int) ((relativeX / (float) mapPanel.getWidth()) * mapWidth)));
+        int hoverY = Math.max(0, Math.min(mapHeight - 1, (int) ((relativeY / (float) mapPanel.getHeight()) * mapHeight)));
+        mapPreviewTileX = hoverX;
+        mapPreviewTileY = hoverY;
+        updateMapCameraFromPreview();
+    }
+
+    private void setTopDownMapCamera() {
+        if (state == null || state.app == null || state.getKwdFile() == null) {
+            return;
+        }
+
+        GameClientState gcs = state.stateManager.getState(GameClientState.class);
+        if (gcs == null || gcs.getMapClientService() == null || gcs.getMapClientService().getMapData() == null) {
+            return;
+        }
+
+        int mapWidth = gcs.getMapClientService().getMapData().getWidth();
+        int mapHeight = gcs.getMapClientService().getMapData().getHeight();
+        float centerX = (mapWidth * WorldUtils.TILE_WIDTH) / 2f;
+        float centerZ = (mapHeight * WorldUtils.TILE_WIDTH) / 2f;
+        float height = Math.max(10f, Math.max(mapWidth, mapHeight) * 2f);
+
+        state.app.getCamera().setLocation(new Vector3f(centerX, height, centerZ));
+        state.app.getCamera().lookAt(new Vector3f(centerX, 0, centerZ), Vector3f.UNIT_Y);
+    }
+
+    private void updateMapCameraFromPreview() {
+        if (!fullscreenMapVisible || state == null || state.app == null) {
+            return;
+        }
+
+        GameClientState gcs = state.stateManager.getState(GameClientState.class);
+        if (gcs == null || gcs.getMapClientService() == null || gcs.getMapClientService().getMapData() == null) {
+            return;
+        }
+
+        int mapWidth = gcs.getMapClientService().getMapData().getWidth();
+        int mapHeight = gcs.getMapClientService().getMapData().getHeight();
+        float worldX = Math.min(mapWidth * WorldUtils.TILE_WIDTH, Math.max(0, mapPreviewTileX * WorldUtils.TILE_WIDTH + WorldUtils.TILE_WIDTH / 2f));
+        float worldZ = Math.min(mapHeight * WorldUtils.TILE_WIDTH, Math.max(0, mapPreviewTileY * WorldUtils.TILE_WIDTH + WorldUtils.TILE_WIDTH / 2f));
+        float height = Math.max(10f, state.app.getCamera().getLocation().y);
+
+        state.app.getCamera().setLocation(new Vector3f(worldX, height, worldZ));
+        state.app.getCamera().lookAt(new Vector3f(worldX, 0, worldZ), Vector3f.UNIT_Y);
     }
 
     @Override
@@ -893,6 +993,15 @@ public final class PlayerScreenController implements IPlayerScreenController {
                         ImageRenderer renderer = element.getRenderer(ImageRenderer.class);
                         renderer.setImage(niftyImage);
                         element.getParent().layoutElements();
+                    }
+
+                    Element fullElement = nifty.getScreen(SCREEN_HUD_ID).findElementById("fullscreenMapImage");
+                    if (fullElement != null) {
+                        ImageRenderer fullRenderer = fullElement.getRenderer(ImageRenderer.class);
+                        if (fullRenderer != null) {
+                            fullRenderer.setImage(niftyImage);
+                            fullElement.getParent().layoutElements();
+                        }
                     }
                     lastMinimapImageKey = key;
                 } catch (Exception e) {
