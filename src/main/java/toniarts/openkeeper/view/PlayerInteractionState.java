@@ -441,7 +441,7 @@ public abstract class PlayerInteractionState extends AbstractPauseAwareState {
         Vector3f tmp = cam.getWorldCoordinates(mousePosition, 0f).clone();
         Vector3f dir = cam.getWorldCoordinates(mousePosition, 1f).subtractLocal(tmp).normalizeLocal();
         dir.multLocal((WorldUtils.TILE_HEIGHT - camPos.getY()) / dir.getY()).addLocal(camPos);
-        float lightHeight = WorldUtils.TILE_HEIGHT / 2;
+        float lightHeight = WorldUtils.TILE_HEIGHT * 2;
         if (gameClientState.getMapClientService().getTerrain(tile).getFlags().contains(Terrain.TerrainFlag.SOLID)) {
             lightHeight += WorldUtils.TILE_HEIGHT;
         }
