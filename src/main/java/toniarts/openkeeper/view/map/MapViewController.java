@@ -38,7 +38,9 @@ import toniarts.openkeeper.tools.convert.KmfModelLoader;
 import toniarts.openkeeper.tools.convert.map.*;
 import toniarts.openkeeper.utils.AssetUtils;
 import toniarts.openkeeper.utils.Color;
+import toniarts.openkeeper.utils.MapThumbnailGenerator;
 import toniarts.openkeeper.utils.Point;
+import com.jme3.util.BufferUtils;
 import toniarts.openkeeper.utils.WorldUtils;
 import toniarts.openkeeper.view.control.TorchControl;
 import toniarts.openkeeper.view.loader.ILoader;
@@ -49,6 +51,7 @@ import toniarts.openkeeper.view.map.construction.WaterConstructor;
 
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
+import java.nio.FloatBuffer;
 import java.util.*;
 
 /**
@@ -85,6 +88,7 @@ public abstract class MapViewController implements ILoader<KwdFile> {
     private final Map<RoomInstance, RoomConstructor> roomActuals = new HashMap<>(); // Rooms by room constructor
     private final Map<Point, EntityInstance<Terrain>> terrainBatchCoordinates = new HashMap<>(); // A quick glimpse whether terrain batch at specific coordinates is already "found"
     private final Map<Point, Light> lightMap = new HashMap<>();
+    private TerrainLightingService lightingService;
 
     public MapViewController(AssetManager assetManager, KwdFile kwdFile, IMapInformation mapClientService, short playerId) {
         this.kwdFile = kwdFile;
@@ -128,20 +132,42 @@ public abstract class MapViewController implements ILoader<KwdFile> {
 
         // Batch the terrain pages
         for (Node page : pages) {
+            ensureBatchVertexColors((BatchNode) page.getChild(FLOOR_INDEX));
+            ensureBatchVertexColors((BatchNode) page.getChild(WALL_INDEX));
+            ensureBatchVertexColors((BatchNode) page.getChild(TOP_INDEX));
             ((BatchNode) page.getChild(FLOOR_INDEX)).batch();
             ((BatchNode) page.getChild(WALL_INDEX)).batch();
             ((BatchNode) page.getChild(TOP_INDEX)).batch();
         }
         map.attachChild(terrain);
 
+        // Initialize terrain lighting service
+        lightingService = new TerrainLightingService(getMapData());
+        registerAllLightSources();
+        rebuildAllPageLighting();
+
         // Create the water
+        Spatial waterSpatial = null;
         if (!waterBatches.isEmpty()) {
-            map.attachChild(Water.construct(assetManager, waterBatches));
+            waterSpatial = Water.construct(assetManager, waterBatches);
+            map.attachChild(waterSpatial);
         }
 
         // And the lava
+        Spatial lavaSpatial = null;
         if (!lavaBatches.isEmpty()) {
-            map.attachChild(Water.construct(assetManager, lavaBatches));
+            lavaSpatial = Water.construct(assetManager, lavaBatches);
+            map.attachChild(lavaSpatial);
+        }
+
+        // Compute vertex lighting for water/lava after lighting service init
+        if (lightingService != null) {
+            if (waterSpatial instanceof Geometry waterGeo) {
+                Water.applyLighting(waterGeo, lightingService);
+            }
+            if (lavaSpatial instanceof Geometry lavaGeo) {
+                Water.applyLighting(lavaGeo, lightingService);
+            }
         }
 
         return map;
@@ -221,6 +247,11 @@ public abstract class MapViewController implements ILoader<KwdFile> {
             Light light = lightMap.get(point);
             if (light != null) {
                 map.removeLight(light);
+
+                // Also remove from lighting service
+                if (lightingService != null) {
+                    lightingService.removeLight(point);
+                }
             }
 
             // Reconstruct
@@ -229,7 +260,17 @@ public abstract class MapViewController implements ILoader<KwdFile> {
 
         // Batch
         for (BatchNode batchNode : nodesNeedBatching) {
+            ensureBatchVertexColors(batchNode);
             batchNode.batch();
+        }
+
+        // Rebuild lighting for affected pages
+        if (lightingService != null) {
+            Set<Point> dirtyPages = lightingService.getDirtyPages();
+            for (Point page : dirtyPages) {
+                rebuildPageLighting(page.x, page.y);
+            }
+            lightingService.clearDirtyPages();
         }
     }
 
@@ -532,6 +573,14 @@ public abstract class MapViewController implements ILoader<KwdFile> {
             map.addLight(light);
             lightMap.put(new Point(tile.getX(), tile.getY()), light);
 
+            // Register with terrain lighting service
+            if (lightingService != null) {
+                Point tilePoint = new Point(tile.getX(), tile.getY());
+                TerrainLightSource tls = TerrainLightSource.of(
+                        light.getPosition(), light.getColor(), light.getRadius());
+                lightingService.addLight(tilePoint, tls);
+            }
+
             ((Node) getTileNode(tile.getLocation(), (Node) pageNode.getChild(WALL_INDEX))).attachChild(spatial);
         }
     }
@@ -816,6 +865,9 @@ public abstract class MapViewController implements ILoader<KwdFile> {
      */
     public static void setTerrainMaterialLighting(Material material, Terrain terrain) {
 
+        // Enable vertex color support for baked terrain lighting
+        material.setBoolean("UseVertexColor", true);
+
         // Ambient light
         if (terrain.getFlags().contains(Terrain.TerrainFlag.AMBIENT_LIGHT)) {
             Color c = terrain.getAmbientLight();
@@ -1030,6 +1082,218 @@ public abstract class MapViewController implements ILoader<KwdFile> {
 
         // Redraw
         updateRoomWalls(roomInstance);
+    }
+
+    /**
+     * Register all existing torch light sources with the lighting service.
+     * Called during initial map load after all tiles have been processed.
+     */
+    private void registerAllLightSources() {
+        if (lightingService == null) {
+            return;
+        }
+
+        for (Map.Entry<Point, Light> entry : lightMap.entrySet()) {
+            if (entry.getValue() instanceof PointLight pl) {
+                TerrainLightSource tls = TerrainLightSource.of(
+                        pl.getPosition(), pl.getColor(), pl.getRadius());
+                lightingService.addLight(entry.getKey(), tls);
+            }
+        }
+    }
+
+    /**
+     * Rebuild vertex lighting for all pages. Called once during initial map
+     * load after all torches have been registered.
+     */
+    private void rebuildAllPageLighting() {
+        if (lightingService == null || map == null) {
+            return;
+        }
+
+        Node terrainNode = (Node) map.getChild(TERRAIN_NODE);
+        if (terrainNode == null) {
+            return;
+        }
+
+        int pagesX = (int) Math.ceil((double) getMapData().getWidth() / PAGE_SQUARE_SIZE);
+        int pagesY = (int) Math.ceil((double) getMapData().getHeight() / PAGE_SQUARE_SIZE);
+
+        for (int px = 0; px < pagesX; px++) {
+            for (int py = 0; py < pagesY; py++) {
+                rebuildPageLighting(px, py);
+            }
+        }
+    }
+
+    /**
+     * Rebuild vertex lighting for a single page. Traverses all geometries in
+     * the page's floor, wall, and ceiling BatchNodes, extracts vertex world
+     * positions, computes lighting from nearby sources, and writes the result
+     * into each geometry's vertex color buffer.
+     *
+     * @param pageX page x coordinate
+     * @param pageY page y coordinate
+     */
+    private void rebuildPageLighting(int pageX, int pageY) {
+        if (lightingService == null || map == null) {
+            return;
+        }
+
+        Node terrainNode = (Node) map.getChild(TERRAIN_NODE);
+        if (terrainNode == null) {
+            return;
+        }
+
+        int pageIndex = getPageIndex(pageX, pageY);
+        if (pageIndex < 0 || pageIndex >= pages.size()) {
+            return;
+        }
+
+        Node page = pages.get(pageIndex);
+        processBatchNodeLighting((BatchNode) page.getChild(FLOOR_INDEX));
+        processBatchNodeLighting((BatchNode) page.getChild(WALL_INDEX));
+        processBatchNodeLighting((BatchNode) page.getChild(TOP_INDEX));
+    }
+
+    /**
+     * Process lighting for all geometries in a BatchNode. After batching, the
+     * BatchNode contains merged Geometry objects. We traverse them and update
+     * their vertex color buffers.
+     */
+    private void processBatchNodeLighting(BatchNode batchNode) {
+        batchNode.depthFirstTraversal(new SceneGraphVisitor() {
+            @Override
+            public void visit(Spatial spatial) {
+                if (spatial instanceof Geometry geom) {
+                    applyLightingToGeometry(geom);
+                }
+            }
+        });
+    }
+
+    /**
+     * Compute and apply vertex colors to a single Geometry based on nearby
+     * light sources and owner tint. For each vertex, determines the tile it
+     * belongs to via world position, looks up owner color if the terrain has
+     * PLAYER_COLOURED flags, and bakes the tint into the vertex color.
+     *
+     * @param geom the geometry to update
+     */
+    private void applyLightingToGeometry(Geometry geom) {
+        Mesh mesh = geom.getMesh();
+        if (mesh == null) {
+            return;
+        }
+
+        // Get vertex positions (in world space after BatchNode batching)
+        FloatBuffer posBuffer = (FloatBuffer) mesh.getBuffer(VertexBuffer.Type.Position).getData();
+        if (posBuffer == null) {
+            return;
+        }
+
+        int vertexCount = posBuffer.limit() / 3;
+        Vector3f[] worldPositions = new Vector3f[vertexCount];
+
+        // After BatchNode.batch(), vertex positions already include local
+        // transforms. Apply the geometry's world transform to get final
+        // world positions.
+        com.jme3.math.Transform worldTransform = geom.getWorldTransform();
+
+        for (int i = 0; i < vertexCount; i++) {
+            float x = posBuffer.get(i * 3);
+            float y = posBuffer.get(i * 3 + 1);
+            float z = posBuffer.get(i * 3 + 2);
+            Vector3f localPos = new Vector3f(x, y, z);
+            worldPositions[i] = worldTransform.transformVector(localPos, null);
+        }
+
+        // Compute vertex colors from light sources
+        ColorRGBA[] colors = lightingService.computeVertexColors(worldPositions);
+
+        // Apply owner tint per-vertex based on which tile the vertex belongs to.
+        // After batching, we reverse-map each vertex to its tile via world position.
+        for (int i = 0; i < vertexCount; i++) {
+            Point tilePoint = WorldUtils.vectorToPoint(worldPositions[i]);
+            IMapTileInformation tile = getMapData().getTile(tilePoint);
+            if (tile != null) {
+                Terrain terrain = getTerrain(tile);
+                boolean playerColoured = terrain.getFlags().contains(Terrain.TerrainFlag.PLAYER_COLOURED_PATH)
+                        || terrain.getFlags().contains(Terrain.TerrainFlag.PLAYER_COLOURED_WALL);
+                if (playerColoured) {
+                    java.awt.Color awtColor = MapThumbnailGenerator.getPlayerColor(tile.getOwnerId());
+                    if (awtColor != null) {
+                        ColorRGBA tint = new ColorRGBA(
+                                awtColor.getRed() / 255f,
+                                awtColor.getGreen() / 255f,
+                                awtColor.getBlue() / 255f,
+                                1f);
+                        colors[i].r *= tint.r;
+                        colors[i].g *= tint.g;
+                        colors[i].b *= tint.b;
+                    }
+                }
+            }
+        }
+
+        // Write vertex colors back to the mesh
+        VertexBuffer colorBuf = mesh.getBuffer(VertexBuffer.Type.Color);
+        FloatBuffer colorBuffer;
+        if (colorBuf == null) {
+            colorBuffer = BufferUtils.createFloatBuffer(vertexCount * 4);
+            mesh.setBuffer(VertexBuffer.Type.Color, 4, colorBuffer);
+        } else {
+            colorBuffer = (FloatBuffer) colorBuf.getData();
+            if (colorBuffer == null || colorBuffer.capacity() < vertexCount * 4) {
+                colorBuffer = BufferUtils.createFloatBuffer(vertexCount * 4);
+                mesh.setBuffer(VertexBuffer.Type.Color, 4, colorBuffer);
+            } else {
+                colorBuffer.clear();
+            }
+        }
+
+        for (ColorRGBA color : colors) {
+            colorBuffer.put(color.r).put(color.g).put(color.b).put(color.a);
+        }
+
+        colorBuffer.flip();
+    }
+
+    /**
+     * Get the page index for given page coordinates.
+     */
+    private int getPageIndex(int pageX, int pageY) {
+        int pagesPerRow = (int) Math.ceil((double) getMapData().getWidth() / PAGE_SQUARE_SIZE);
+        return pageY * pagesPerRow + pageX;
+    }
+
+    /**
+     * Ensure all Geometry children of a BatchNode have a vertex color buffer.
+     * Required because BatchNode.batch() demands all child geometries share
+     * the same buffer types. Geometries loaded from KMF already have one via
+     * KmfModelLoader, but procedurally constructed geometries (quad
+     * constructors, room floors, etc.) may not.
+     *
+     * @param batchNode the batch node to ensure vertex colors on
+     */
+    private void ensureBatchVertexColors(BatchNode batchNode) {
+        if (batchNode == null) {
+            return;
+        }
+        batchNode.depthFirstTraversal(new SceneGraphVisitor() {
+            @Override
+            public void visit(Spatial s) {
+                if (s instanceof Geometry geom) {
+                    Mesh mesh = geom.getMesh();
+                    if (mesh != null && mesh.getBuffer(VertexBuffer.Type.Color) == null) {
+                        int vertexCount = mesh.getVertexCount();
+                        ColorRGBA[] white = new ColorRGBA[vertexCount];
+                        Arrays.fill(white, ColorRGBA.White);
+                        mesh.setBuffer(VertexBuffer.Type.Color, 4, BufferUtils.createFloatBuffer(white));
+                    }
+                }
+            }
+        });
     }
 
     /**

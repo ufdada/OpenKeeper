@@ -27,9 +27,11 @@ import com.jme3.renderer.queue.RenderQueue;
 import com.jme3.scene.Geometry;
 import com.jme3.scene.Mesh;
 import com.jme3.scene.Spatial;
+import com.jme3.scene.VertexBuffer;
 import com.jme3.scene.VertexBuffer.Type;
 import com.jme3.texture.Texture;
 import com.jme3.util.BufferUtils;
+import java.nio.FloatBuffer;
 import toniarts.openkeeper.utils.Point;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -189,6 +191,14 @@ public final class Water {
         mesh.setBuffer(Type.TexCoord, 2, BufferUtils.createFloatBuffer(textureCoordinates.toArray(new Vector2f[0])));
         mesh.setBuffer(Type.Index, 3, BufferUtils.createIntBuffer(toIntArray(indexes)));
         mesh.setBuffer(Type.Normal, 3, BufferUtils.createFloatBuffer(normals.toArray(new Vector3f[0])));
+
+        // Vertex colors: initialize to white. The terrain lighting service
+        // will overwrite with baked contributions from nearby light sources.
+        int vertexCount = vertices.size();
+        ColorRGBA[] colors = new ColorRGBA[vertexCount];
+        Arrays.fill(colors, ColorRGBA.White);
+        mesh.setBuffer(Type.Color, 4, BufferUtils.createFloatBuffer(colors));
+
         mesh.updateBound();
 
         return mesh;
@@ -230,5 +240,66 @@ public final class Water {
             ret[i] = list.get(i);
         }
         return ret;
+    }
+
+    /**
+     * Compute and apply vertex lighting to a Water/Lava geometry. Reads
+     * vertex positions, queries the lighting service for contributions from
+     * nearby light sources, and writes the result into the vertex color
+     * buffer.
+     *
+     * @param geom the water/lava geometry
+     * @param lightingService the terrain lighting service
+     */
+    public static void applyLighting(Geometry geom, TerrainLightingService lightingService) {
+        if (lightingService == null || geom == null) {
+            return;
+        }
+
+        Mesh mesh = geom.getMesh();
+        if (mesh == null) {
+            return;
+        }
+
+        VertexBuffer posBuf = mesh.getBuffer(Type.Position);
+        if (posBuf == null) {
+            return;
+        }
+
+        FloatBuffer posBuffer = (FloatBuffer) posBuf.getData();
+        if (posBuffer == null) {
+            return;
+        }
+
+        int vertexCount = posBuffer.limit() / 3;
+        Vector3f[] worldPositions = new Vector3f[vertexCount];
+
+        // Water mesh vertices are already in world space (no batching)
+        for (int i = 0; i < vertexCount; i++) {
+            float x = posBuffer.get(i * 3);
+            float y = posBuffer.get(i * 3 + 1);
+            float z = posBuffer.get(i * 3 + 2);
+            worldPositions[i] = new Vector3f(x, y, z);
+        }
+
+        // Compute vertex colors from nearby light sources
+        ColorRGBA[] colors = lightingService.computeVertexColors(worldPositions);
+
+        // Write vertex colors back
+        VertexBuffer colorBuf = mesh.getBuffer(Type.Color);
+        FloatBuffer colorBuffer;
+        if (colorBuf == null) {
+            colorBuffer = BufferUtils.createFloatBuffer(vertexCount * 4);
+            mesh.setBuffer(Type.Color, 4, colorBuffer);
+        } else {
+            colorBuffer = (FloatBuffer) colorBuf.getData();
+            colorBuffer.clear();
+        }
+
+        for (ColorRGBA color : colors) {
+            colorBuffer.put(color.r).put(color.g).put(color.b).put(color.a);
+        }
+
+        colorBuffer.flip();
     }
 }

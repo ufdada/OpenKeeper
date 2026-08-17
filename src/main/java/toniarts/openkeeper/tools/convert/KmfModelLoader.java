@@ -50,6 +50,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -222,6 +223,14 @@ public final class KmfModelLoader implements AssetLoader {
             mesh.setBuffer(Type.Position, 3, BufferUtils.createFloatBuffer(vertices));
             mesh.setBuffer(Type.TexCoord, 2, BufferUtils.createFloatBuffer(texCoord));
             mesh.setBuffer(Type.Normal, 3, BufferUtils.createFloatBuffer(normals));
+
+            // Vertex colors: initialize to white (no tinting). The terrain
+            // lighting system will overwrite these per-vertex with baked
+            // dynamic lighting contributions from torches, lava, etc.
+            ColorRGBA[] colors = new ColorRGBA[vertices.length];
+            Arrays.fill(colors, ColorRGBA.White);
+            mesh.setBuffer(Type.Color, 4, BufferUtils.createFloatBuffer(colors));
+
             mesh.setStatic();
 
             // Create geometry

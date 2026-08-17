@@ -1,0 +1,206 @@
+MaterialDef TerrainLighting {
+
+    MaterialParameters {
+
+        // Diffuse texture
+        Texture2D DiffuseMap
+
+        // Normal map
+        Texture2D NormalMap -LINEAR
+
+        // Specular/gloss map
+        Texture2D SpecularMap
+
+        // Use vertex color as an additional diffuse multiplier.
+        // The terrain lighting system writes baked torch/lava/ambient
+        // contributions into this buffer per-vertex.
+        Boolean UseVertexColor
+
+        // Owner tint color applied per-tile/per-material.
+        // Derived from DK2 MapColours palette (35 + playerId).
+        Color OwnerTint : 1 1 1 1
+
+        // Use the provided ambient, diffuse, and specular colors
+        Boolean UseMaterialColors
+
+        // Ambient color (from terrain flags)
+        Color Ambient
+
+        // Diffuse color
+        Color Diffuse
+
+        // Specular color (from terrain flags)
+        Color Specular
+
+        // Specular power/shininess
+        Float Shininess : 1
+
+        // Alpha threshold for fragment discarding
+        Float AlphaDiscardThreshold
+
+        // Shadows
+        Int FilterMode
+        Boolean HardwareShadows
+
+        Texture2D ShadowMap0
+        Texture2D ShadowMap1
+        Texture2D ShadowMap2
+        Texture2D ShadowMap3
+
+        Float ShadowIntensity
+        Vector4 Splits
+        Vector2 FadeInfo
+
+        Matrix4 LightViewProjectionMatrix0
+        Matrix4 LightViewProjectionMatrix1
+        Matrix4 LightViewProjectionMatrix2
+        Matrix4 LightViewProjectionMatrix3
+
+        Float PCFEdge
+        Float ShadowMapSize
+
+        // Fog
+        Boolean UseFog
+        Color FogColor
+        Vector2 LinearFog
+        Float ExpFog
+        Float ExpSqFog
+    }
+
+    Technique {
+        LightMode SinglePass
+
+        VertexShader   GLSL310 GLSL300 GLSL150: Shaders/TerrainLighting.vert
+        FragmentShader GLSL310 GLSL300 GLSL150: Shaders/TerrainLighting.frag
+
+        WorldParameters {
+            WorldViewProjectionMatrix
+            NormalMatrix
+            WorldViewMatrix
+            ViewMatrix
+            CameraPosition
+            WorldMatrix
+            ViewProjectionMatrix
+        }
+
+        Defines {
+            DIFFUSEMAP : DiffuseMap
+            NORMALMAP : NormalMap
+            SPECULARMAP : SpecularMap
+            VERTEX_COLOR : UseVertexColor
+            OWNER_TINT : OwnerTint
+            MATERIAL_COLORS : UseMaterialColors
+            DISCARD_ALPHA : AlphaDiscardThreshold
+
+            // fog
+            USE_FOG : UseFog
+            FOG_LINEAR : LinearFog
+            FOG_EXP : ExpFog
+            FOG_EXPSQ : ExpSqFog
+        }
+    }
+
+    Technique {
+        LightMode MultiPass
+
+        VertexShader   GLSL310 GLSL300 GLSL150: Shaders/TerrainLighting.vert
+        FragmentShader GLSL310 GLSL300 GLSL150: Shaders/TerrainLighting.frag
+
+        WorldParameters {
+            WorldViewProjectionMatrix
+            NormalMatrix
+            WorldViewMatrix
+            ViewMatrix
+            CameraPosition
+            WorldMatrix
+            ViewProjectionMatrix
+        }
+
+        Defines {
+            DIFFUSEMAP : DiffuseMap
+            NORMALMAP : NormalMap
+            SPECULARMAP : SpecularMap
+            VERTEX_COLOR : UseVertexColor
+            OWNER_TINT : OwnerTint
+            MATERIAL_COLORS : UseMaterialColors
+            DISCARD_ALPHA : AlphaDiscardThreshold
+
+            USE_FOG : UseFog
+            FOG_LINEAR : LinearFog
+            FOG_EXP : ExpFog
+            FOG_EXPSQ : ExpSqFog
+        }
+    }
+
+    Technique PreShadow {
+
+        VertexShader   GLSL310 GLSL300 GLSL150: Shaders/TerrainLighting.vert
+        FragmentShader GLSL310 GLSL300 GLSL150: Shaders/TerrainLighting.frag
+
+        WorldParameters {
+            WorldViewProjectionMatrix
+            WorldViewMatrix
+            ViewProjectionMatrix
+            ViewMatrix
+        }
+
+        Defines {
+            DISCARD_ALPHA : AlphaDiscardThreshold
+        }
+
+        ForcedRenderState {
+            FaceCull Off
+            DepthTest On
+            DepthWrite On
+            PolyOffset 5 3
+            ColorWrite Off
+        }
+    }
+
+    Technique PostShadow {
+
+        VertexShader   GLSL310 GLSL300 GLSL150: Shaders/TerrainLighting.vert
+        FragmentShader GLSL310 GLSL300 GLSL150: Shaders/TerrainLighting.frag
+
+        WorldParameters {
+            WorldViewProjectionMatrix
+            WorldMatrix
+            ViewProjectionMatrix
+            ViewMatrix
+            NormalMatrix
+        }
+
+        Defines {
+            HARDWARE_SHADOWS : HardwareShadows
+            FILTER_MODE : FilterMode
+            PCFEDGE : PCFEdge
+            DISCARD_ALPHA : AlphaDiscardThreshold
+            SHADOWMAP_SIZE : ShadowMapSize
+            FADE : FadeInfo
+            PSSM : Splits
+        }
+
+        ForcedRenderState {
+            Blend Modulate
+            DepthWrite Off
+            PolyOffset -0.1 0
+        }
+    }
+
+    Technique Glow {
+
+        VertexShader   GLSL310 GLSL300 GLSL150: Common/MatDefs/Misc/Unshaded.vert
+        FragmentShader GLSL310 GLSL300 GLSL150: Common/MatDefs/Light/Glow.frag
+
+        WorldParameters {
+            WorldViewProjectionMatrix
+            ViewProjectionMatrix
+            ViewMatrix
+        }
+
+        Defines {
+            HAS_GLOWMAP : GlowMap
+            HAS_GLOWCOLOR : GlowColor
+        }
+    }
+}
