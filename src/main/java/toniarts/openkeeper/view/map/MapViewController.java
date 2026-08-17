@@ -1257,6 +1257,12 @@ public abstract class MapViewController implements ILoader<KwdFile> {
         }
 
         colorBuffer.flip();
+
+        // Ensure the batched geometry's material uses vertex colors
+        Material mat = geom.getMaterial();
+        if (mat != null) {
+            mat.setBoolean("UseVertexColor", true);
+        }
     }
 
     /**
@@ -1290,6 +1296,10 @@ public abstract class MapViewController implements ILoader<KwdFile> {
                         ColorRGBA[] white = new ColorRGBA[vertexCount];
                         Arrays.fill(white, ColorRGBA.White);
                         mesh.setBuffer(VertexBuffer.Type.Color, 4, BufferUtils.createFloatBuffer(white));
+                    }
+                    Material mat = geom.getMaterial();
+                    if (mat != null) {
+                        mat.setBoolean("UseVertexColor", true);
                     }
                 }
             }
