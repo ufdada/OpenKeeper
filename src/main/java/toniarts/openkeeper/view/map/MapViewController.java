@@ -21,6 +21,8 @@ import com.jme3.asset.AssetKey;
 import com.jme3.asset.AssetManager;
 import com.jme3.asset.TextureKey;
 import com.jme3.material.Material;
+import com.jme3.light.Light;
+import com.jme3.light.PointLight;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.FastMath;
 import com.jme3.math.Vector3f;
@@ -82,6 +84,7 @@ public abstract class MapViewController implements ILoader<KwdFile> {
     private final Map<Point, Thing.Room> roomThings = new HashMap<>();
     private final Map<RoomInstance, RoomConstructor> roomActuals = new HashMap<>(); // Rooms by room constructor
     private final Map<Point, EntityInstance<Terrain>> terrainBatchCoordinates = new HashMap<>(); // A quick glimpse whether terrain batch at specific coordinates is already "found"
+    private final Map<Point, Light> lightMap = new HashMap<>();
 
     public MapViewController(AssetManager assetManager, KwdFile kwdFile, IMapInformation mapClientService, short playerId) {
         this.kwdFile = kwdFile;
@@ -212,6 +215,12 @@ public abstract class MapViewController implements ILoader<KwdFile> {
                 tileNode.removeFromParent();
                 ((BatchNode) pageNode.getChild(TOP_INDEX)).attachChildAt(new Node(tileNode.getName()), getTileNodeIndex(point));
                 nodesNeedBatching.add((BatchNode) pageNode.getChild(TOP_INDEX));
+            }
+
+            // Remove lights
+            Light light = lightMap.get(point);
+            if (light != null) {
+                map.removeLight(light);
             }
 
             // Reconstruct
@@ -516,6 +525,12 @@ public abstract class MapViewController implements ILoader<KwdFile> {
             spatial.addControl(new TorchControl(kwdFile, assetManager, angleY));
             spatial.rotate(0, angleY, 0);
             spatial.setLocalTranslation(WorldUtils.pointToVector3f(tile.getLocation()).addLocal(position));
+
+            // Light
+            PointLight light = new PointLight(spatial.getLocalTranslation(), ColorRGBA.Orange, WorldUtils.TILE_WIDTH * 2);
+            light.setName(tile.getX() + "-" + tile.getY());
+            map.addLight(light);
+            lightMap.put(new Point(tile.getX(), tile.getY()), light);
 
             ((Node) getTileNode(tile.getLocation(), (Node) pageNode.getChild(WALL_INDEX))).attachChild(spatial);
         }
