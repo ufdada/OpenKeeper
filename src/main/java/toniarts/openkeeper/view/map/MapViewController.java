@@ -38,7 +38,6 @@ import toniarts.openkeeper.tools.convert.KmfModelLoader;
 import toniarts.openkeeper.tools.convert.map.*;
 import toniarts.openkeeper.utils.AssetUtils;
 import toniarts.openkeeper.utils.Color;
-import toniarts.openkeeper.utils.MapThumbnailGenerator;
 import toniarts.openkeeper.utils.Point;
 import com.jme3.util.BufferUtils;
 import toniarts.openkeeper.utils.WorldUtils;
@@ -1210,31 +1209,6 @@ public abstract class MapViewController implements ILoader<KwdFile> {
 
         // Compute vertex colors from light sources
         ColorRGBA[] colors = lightingService.computeVertexColors(worldPositions);
-
-        // Apply owner tint per-vertex based on which tile the vertex belongs to.
-        // After batching, we reverse-map each vertex to its tile via world position.
-        for (int i = 0; i < vertexCount; i++) {
-            Point tilePoint = WorldUtils.vectorToPoint(worldPositions[i]);
-            IMapTileInformation tile = getMapData().getTile(tilePoint);
-            if (tile != null) {
-                Terrain terrain = getTerrain(tile);
-                boolean playerColoured = terrain.getFlags().contains(Terrain.TerrainFlag.PLAYER_COLOURED_PATH)
-                        || terrain.getFlags().contains(Terrain.TerrainFlag.PLAYER_COLOURED_WALL);
-                if (playerColoured) {
-                    java.awt.Color awtColor = MapThumbnailGenerator.getPlayerColor(tile.getOwnerId());
-                    if (awtColor != null) {
-                        ColorRGBA tint = new ColorRGBA(
-                                awtColor.getRed() / 255f,
-                                awtColor.getGreen() / 255f,
-                                awtColor.getBlue() / 255f,
-                                1f);
-                        colors[i].r *= tint.r;
-                        colors[i].g *= tint.g;
-                        colors[i].b *= tint.b;
-                    }
-                }
-            }
-        }
 
         // Write vertex colors back to the mesh
         VertexBuffer colorBuf = mesh.getBuffer(VertexBuffer.Type.Color);
