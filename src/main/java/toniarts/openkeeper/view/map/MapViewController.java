@@ -567,7 +567,7 @@ public abstract class MapViewController implements ILoader<IKwdFile> {
             spatial.setLocalTranslation(WorldUtils.pointToVector3f(tile.getLocation()).addLocal(position));
 
             // Light
-            PointLight light = new PointLight(spatial.getLocalTranslation(), ColorRGBA.Orange, WorldUtils.TILE_WIDTH * 2);
+            PointLight light = new PointLight(spatial.getLocalTranslation(), ColorRGBA.White, WorldUtils.TILE_WIDTH);
             light.setName(tile.getX() + "-" + tile.getY());
             map.addLight(light);
             lightMap.put(new Point(tile.getX(), tile.getY()), light);
@@ -1084,8 +1084,9 @@ public abstract class MapViewController implements ILoader<IKwdFile> {
     }
 
     /**
-     * Register all existing torch light sources with the lighting service.
-     * Called during initial map load after all tiles have been processed.
+     * Register all light sources with the lighting service: torches, lava
+     * (red), and water (blue). Called during initial map load after all
+     * tiles have been processed.
      */
     private void registerAllLightSources() {
         if (lightingService == null) {
@@ -1097,6 +1098,34 @@ public abstract class MapViewController implements ILoader<IKwdFile> {
                 TerrainLightSource tls = TerrainLightSource.of(
                         pl.getPosition(), pl.getColor(), pl.getRadius());
                 lightingService.addLight(entry.getKey(), tls);
+            }
+        }
+
+        // Register lava tiles as red light sources
+        for (EntityInstance<Terrain> batch : lavaBatches) {
+            for (Point tile : batch.getCoordinates()) {
+                Vector3f pos = new Vector3f(
+                        tile.x * WorldUtils.TILE_WIDTH,
+                        WorldUtils.WATER_LEVEL,
+                        tile.y * WorldUtils.TILE_WIDTH);
+                TerrainLightSource tls = TerrainLightSource.of(
+                        pos, new ColorRGBA(1.0f, 0.2f, 0.0f, 1.0f),
+                        WorldUtils.TILE_WIDTH);
+                lightingService.addLight(tile, tls);
+            }
+        }
+
+        // Register water tiles as blue light sources
+        for (EntityInstance<Terrain> batch : waterBatches) {
+            for (Point tile : batch.getCoordinates()) {
+                Vector3f pos = new Vector3f(
+                        tile.x * WorldUtils.TILE_WIDTH,
+                        WorldUtils.WATER_LEVEL,
+                        tile.y * WorldUtils.TILE_WIDTH);
+                TerrainLightSource tls = TerrainLightSource.of(
+                        pos, new ColorRGBA(0.0f, 0.4f, 1.0f, 0.8f),
+                        WorldUtils.TILE_WIDTH);
+                lightingService.addLight(tile, tls);
             }
         }
     }
