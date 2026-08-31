@@ -58,7 +58,7 @@ import java.util.*;
  *
  * @author Toni Helenius <helenius.toni@gmail.com>
  */
-public abstract class MapViewController implements ILoader<KwdFile> {
+public abstract class MapViewController implements ILoader<IKwdFile> {
     
     private static final Logger logger = System.getLogger(MapViewController.class.getName());
 
@@ -72,7 +72,7 @@ public abstract class MapViewController implements ILoader<KwdFile> {
     private final static String TERRAIN_NODE = "Terrain";
     private final static String ROOM_NODE = "Rooms";
     private List<Node> pages;
-    private final KwdFile kwdFile;
+    private final IKwdFile kwdFile;
     private Node map;
     private final AssetManager assetManager;
     private final IMapInformation mapClientService;
@@ -89,7 +89,7 @@ public abstract class MapViewController implements ILoader<KwdFile> {
     private final Map<Point, Light> lightMap = new HashMap<>();
     private TerrainLightingService lightingService;
 
-    public MapViewController(AssetManager assetManager, KwdFile kwdFile, IMapInformation mapClientService, short playerId) {
+    public MapViewController(AssetManager assetManager, IKwdFile kwdFile, IMapInformation mapClientService, short playerId) {
         this.kwdFile = kwdFile;
         this.assetManager = assetManager;
         this.mapClientService = mapClientService;
@@ -97,7 +97,7 @@ public abstract class MapViewController implements ILoader<KwdFile> {
     }
 
     @Override
-    public Spatial load(AssetManager assetManager, KwdFile object) {
+    public Spatial load(AssetManager assetManager, IKwdFile object) {
 
         //Create a root
         map = new Node(MAP_NODE);
