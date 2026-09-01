@@ -177,9 +177,10 @@ public class TerrainLightingService {
             // Apply attenuation curve (smoothstep for nicer falloff)
             attenuation = attenuation * attenuation * (3f - 2f * attenuation);
 
-            r += light.color().r * attenuation;
-            g += light.color().g * attenuation;
-            b += light.color().b * attenuation;
+            ColorRGBA c = light.color();
+            r += c.r * attenuation;
+            g += c.g * attenuation;
+            b += c.b * attenuation;
         }
 
         // Clamp to [0, 1]

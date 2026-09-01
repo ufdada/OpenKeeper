@@ -42,6 +42,7 @@ import toniarts.openkeeper.utils.Point;
 import com.jme3.util.BufferUtils;
 import toniarts.openkeeper.utils.WorldUtils;
 import toniarts.openkeeper.view.control.TorchControl;
+import toniarts.openkeeper.view.control.TorchLightControl;
 import toniarts.openkeeper.view.loader.ILoader;
 import toniarts.openkeeper.view.map.WallSection.WallDirection;
 import toniarts.openkeeper.view.map.construction.RoomConstructor;
@@ -567,12 +568,19 @@ public abstract class MapViewController implements ILoader<IKwdFile> {
             spatial.setLocalTranslation(WorldUtils.pointToVector3f(tile.getLocation()).addLocal(position));
 
             // Light
-            PointLight light = new PointLight(spatial.getLocalTranslation(), ColorRGBA.White, WorldUtils.TILE_WIDTH);
+            PointLight light = new PointLight(spatial.getLocalTranslation(), new ColorRGBA(0.8f, 0.6f, 0.2f, 1.0f), WorldUtils.TILE_WIDTH * 1.5f);
             light.setName(tile.getX() + "-" + tile.getY());
+
+            // Animate the light so it flickers, with a per-torch variant so
+            // neighbouring torches do not pulse in sync.
+            spatial.addControl(new TorchLightControl(light,
+                    Math.floorMod(tile.getX() + tile.getY(), TorchLightControl.FLICKER_VARIANTS),
+                    0.5f));
+
             map.addLight(light);
             lightMap.put(new Point(tile.getX(), tile.getY()), light);
 
-            // Register with terrain lighting service
+            // Register with terrain lighting service (base, static bake)
             if (lightingService != null) {
                 Point tilePoint = new Point(tile.getX(), tile.getY());
                 TerrainLightSource tls = TerrainLightSource.of(
@@ -1239,6 +1247,11 @@ public abstract class MapViewController implements ILoader<IKwdFile> {
         // Compute vertex colors from light sources
         ColorRGBA[] colors = lightingService.computeVertexColors(worldPositions);
 
+        // Apply the player colour tint to player-owned tiles
+        for (int i = 0; i < worldPositions.length; i++) {
+            applyPlayerColourTint(worldPositions[i], colors[i]);
+        }
+
         // Write vertex colors back to the mesh
         VertexBuffer colorBuf = mesh.getBuffer(VertexBuffer.Type.Color);
         FloatBuffer colorBuffer;
@@ -1307,6 +1320,41 @@ public abstract class MapViewController implements ILoader<IKwdFile> {
                 }
             }
         });
+    }
+
+    private static final java.util.Set<Terrain.TerrainFlag> PLAYER_COLOURED_FLAGS = java.util.Set.of(
+            Terrain.TerrainFlag.PLAYER_COLOURED_PATH,
+            Terrain.TerrainFlag.PLAYER_COLOURED_WALL);
+
+    private static final ColorRGBA NEUTRAL_TINT = new ColorRGBA(1f, 1f, 1f, 0f);
+
+    /**
+     * Apply the owning player's colour to a vertex of a player-coloured terrain
+     * tile. Owned tiles stay completely white, neutral tiles are brightened
+     * toward white. The tint is blended with the existing colour in place.
+     *
+     * @param worldPos the vertex world position
+     * @param color the computed base lighting colour, modified in place
+     */
+    private void applyPlayerColourTint(Vector3f worldPos, ColorRGBA color) {
+        Point tilePoint = WorldUtils.vectorToPoint(worldPos);
+        IMapTileInformation tile = getMapData().getTile(tilePoint);
+        if (tile == null) {
+            return;
+        }
+
+        Terrain terrain = getTerrain(tile);
+        if (!PLAYER_COLOURED_FLAGS.stream().anyMatch(f -> terrain.getFlags().contains(f))) {
+            return;
+        }
+
+        short ownerId = tile.getOwnerId();
+        if (ownerId == Player.NEUTRAL_PLAYER_ID) {
+            ColorRGBA tint = NEUTRAL_TINT;
+            color.r *= 1f + tint.r;
+            color.g *= 1f + tint.g;
+            color.b *= 1f + tint.b;
+        }
     }
 
     /**
