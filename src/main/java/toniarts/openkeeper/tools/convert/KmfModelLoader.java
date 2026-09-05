@@ -37,6 +37,7 @@ import com.jme3.scene.Mesh;
 import com.jme3.scene.Node;
 import com.jme3.scene.VertexBuffer;
 import com.jme3.scene.VertexBuffer.Type;
+import com.jme3.scene.control.LodControl;
 import com.jme3.texture.Texture;
 import com.jme3.util.BufferUtils;
 import com.jme3.util.mikktspace.MikktspaceTangentGenerator;
@@ -213,11 +214,11 @@ public final class KmfModelLoader implements AssetLoader {
                 i++;
             }
 
-            // Create LOD levels
-            // FIXME: LODs are broken so we only take L0
-            var lodLevels = createIndices(subMesh.getTriangles().subList(0, 1));
+            // Create LOD levels, L0 (the most detailed one) is both the default
+            // index buffer and the first (highest detail) entry of the LOD array
+            var lodLevels = createIndices(subMesh.getTriangles());
             mesh.setBuffer(lodLevels[0]);
-            // mesh.setLodLevels(lodLevels); // needs to include L0!
+            mesh.setLodLevels(lodLevels);
 
             mesh.setBuffer(Type.Position, 3, BufferUtils.createFloatBuffer(vertices));
             mesh.setBuffer(Type.TexCoord, 2, BufferUtils.createFloatBuffer(texCoord));
@@ -427,11 +428,11 @@ public final class KmfModelLoader implements AssetLoader {
                 poseFrames.add(f);
             }
 
-            // Create LOD levels
-            // FIXME: LODs are broken so we only take L0
-            var lodLevels = createIndices(subMesh.getTriangles().subList(0, 1));
+            // Create LOD levels, L0 (the most detailed one) is both the default
+            // index buffer and the first (highest detail) entry of the LOD array
+            var lodLevels = createIndices(subMesh.getTriangles());
             mesh.setBuffer(lodLevels[0]);
-            //mesh.setLodLevels(lodLevels); // needs to include L0!
+            mesh.setLodLevels(lodLevels); // needs to include L0!
 
             mesh.setBuffer(Type.TexCoord, 2, BufferUtils.createFloatBuffer(texCoord));
             // used by PoseTrack
@@ -520,9 +521,11 @@ public final class KmfModelLoader implements AssetLoader {
         //Create geometry
         var geom = new Geometry(meshName + '_' + subMeshIndex, mesh);
 
-        // LODs are broken
-        //var lc = new LodControl();
-        //geom.addControl(lc);
+        // Select a LOD level automatically based on the on-screen size
+        var lc = new LodControl();
+        lc.setDistTolerance(0.001f);
+        geom.addControl(lc);
+        lc.setEnabled(true);
 
         // Material, set the first
         geom.setMaterial(materials.get(materialIndex).get(0));
