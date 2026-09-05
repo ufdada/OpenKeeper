@@ -23,9 +23,17 @@ import com.jme3.app.SimpleApplication;
 import com.jme3.asset.AssetKey;
 import com.jme3.asset.plugins.FileLocator;
 import com.jme3.audio.AudioNode;
+import com.jme3.font.BitmapText;
 import com.jme3.input.KeyInput;
+import com.jme3.input.RawInputListener;
 import com.jme3.input.controls.ActionListener;
 import com.jme3.input.controls.KeyTrigger;
+import com.jme3.input.event.JoyAxisEvent;
+import com.jme3.input.event.JoyButtonEvent;
+import com.jme3.input.event.KeyInputEvent;
+import com.jme3.input.event.MouseButtonEvent;
+import com.jme3.input.event.MouseMotionEvent;
+import com.jme3.input.event.TouchEvent;
 import com.jme3.light.AmbientLight;
 import com.jme3.light.DirectionalLight;
 import com.jme3.light.LightProbe;
@@ -43,6 +51,7 @@ import com.jme3.scene.Mesh;
 import com.jme3.scene.Node;
 import com.jme3.scene.SceneGraphVisitor;
 import com.jme3.scene.Spatial;
+import com.jme3.scene.control.LodControl;
 import com.jme3.scene.shape.Quad;
 import com.jme3.shadow.DirectionalLightShadowRenderer;
 import com.jme3.shadow.EdgeFilteringMode;
@@ -93,7 +102,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Simple model viewer
@@ -139,6 +150,10 @@ public final class ModelViewer extends SimpleApplication {
     private boolean wireframe = false;
     private boolean rotate = true;
     private boolean showNormals = false;
+    private boolean lodAuto = true;
+    private int lodLevel = 0;
+    private final Set<Integer> pressedKeys = new HashSet<>();
+    private BitmapText lodText;
     private List<String> models;
     private List<String> maps;
     private IKwdFile kwdFile;
@@ -174,6 +189,55 @@ public final class ModelViewer extends SimpleApplication {
                 showNormals = !showNormals;
                 toggleShowNormals();
             }
+        }
+    };
+
+    private final RawInputListener rawInputListener = new RawInputListener() {
+        @Override
+        public void beginInput() {
+        }
+
+        @Override
+        public void endInput() {
+        }
+
+        @Override
+        public void onJoyAxisEvent(JoyAxisEvent evt) {
+        }
+
+        @Override
+        public void onJoyButtonEvent(JoyButtonEvent evt) {
+        }
+
+        @Override
+        public void onMouseMotionEvent(MouseMotionEvent evt) {
+        }
+
+        @Override
+        public void onMouseButtonEvent(MouseButtonEvent evt) {
+        }
+
+        @Override
+        public void onKeyEvent(KeyInputEvent evt) {
+            switch (evt.getKeyCode()) {
+                case KeyInput.KEY_LSHIFT:
+                case KeyInput.KEY_RSHIFT:
+                    if (evt.isPressed()) {
+                        pressedKeys.add(KeyInput.KEY_LSHIFT);
+                    } else {
+                        pressedKeys.remove(Integer.valueOf(KeyInput.KEY_LSHIFT));
+                    }
+                    break;
+                case KeyInput.KEY_L:
+                    if (evt.isPressed()) {
+                        changeLod(pressedKeys.contains(KeyInput.KEY_LSHIFT) ? -1 : 1);
+                    }
+                    break;
+            }
+        }
+
+        @Override
+        public void onTouchEvent(TouchEvent evt) {
         }
     };
 
@@ -268,6 +332,14 @@ public final class ModelViewer extends SimpleApplication {
         setupLighting();
         setupFloor();
         setupDebug();
+
+        // LOD level control, L steps to lower and Shift+L to higher LOD level
+        inputManager.addRawInputListener(rawInputListener);
+        lodText = new BitmapText(guiFont, false);
+        lodText.setSize(guiFont.getCharSet().getRenderedSize());
+        lodText.setLocalTranslation(10, cam.getHeight() - lodText.getLineHeight() - 10, 0);
+        lodText.setText("LOD: auto");
+        guiNode.attachChild(lodText);
 
         // Open a KMF model if set
         if (kmfModel != null) {
@@ -605,6 +677,108 @@ public final class ModelViewer extends SimpleApplication {
                 }
             }
         });
+
+        // Reset the forced LOD state for the newly loaded model
+        resetLod(spat);
+    }
+
+    /**
+     * Change the forced LOD level of the shown model. A positive delta steps to
+     * a lower (coarser) LOD level and a negative delta to a higher (finer) one.
+     * The first press takes control away from the auto LOD selection, pressing
+     * higher than the most detailed level returns back to automatic selection.
+     *
+     * @param delta direction to step, 1 for lower, -1 for higher detail
+     */
+    private void changeLod(int delta) {
+        Spatial spat = rootNode.getChild(ModelViewer.NODE_NAME);
+        if (spat == null) {
+            return;
+        }
+
+        // Gather the LOD geometries and the maximum number of LOD levels
+        final int[] maxLods = { 0 };
+        final List<Geometry> geometries = new ArrayList<>();
+        spat.depthFirstTraversal((Spatial spatial) -> {
+            if (spatial instanceof Geometry geometry) {
+                int numLevels = geometry.getMesh().getNumLodLevels();
+                if (numLevels > 0) {
+                    maxLods[0] = Math.max(maxLods[0], numLevels);
+                    geometries.add(geometry);
+                }
+            }
+        });
+
+        if (geometries.isEmpty()) {
+            if (lodText != null) {
+                lodText.setText("LOD: none (no LOD levels)");
+            }
+            return;
+        }
+
+        if (lodAuto) {
+
+            // Take manual control of the LOD level
+            lodAuto = false;
+            lodLevel = (delta > 0) ? 1 : 0;
+            for (Geometry geometry : geometries) {
+                LodControl lodControl = geometry.getControl(LodControl.class);
+                if (lodControl != null) {
+                    lodControl.setEnabled(false);
+                }
+            }
+        } else if (lodLevel == 0 && delta < 0) {
+
+            // At the most detailed level, give control back to the auto selection
+            lodAuto = true;
+            for (Geometry geometry : geometries) {
+                LodControl lodControl = geometry.getControl(LodControl.class);
+                if (lodControl != null) {
+                    lodControl.setEnabled(true);
+                }
+            }
+        } else {
+            lodLevel = Math.max(0, Math.min(maxLods[0] - 1, lodLevel + delta));
+        }
+
+        if (!lodAuto) {
+            final int level = lodLevel;
+            for (Geometry geometry : geometries) {
+                geometry.setLodLevel(Math.min(level, geometry.getMesh().getNumLodLevels() - 1));
+            }
+        }
+
+        if (lodText != null) {
+            if (lodAuto) {
+                lodText.setText("LOD: auto");
+            } else {
+                lodText.setText(String.format("LOD %d/%d", lodLevel, maxLods[0] - 1));
+            }
+        }
+    }
+
+    /**
+     * Reset the LOD state of the given model back to automatic selection
+     *
+     * @param spat the model to reset
+     */
+    private void resetLod(Spatial spat) {
+        lodAuto = true;
+        lodLevel = 0;
+
+        spat.depthFirstTraversal((Spatial spatial) -> {
+            if (spatial instanceof Geometry geometry && geometry.getMesh().getNumLodLevels() > 0) {
+                LodControl lodControl = geometry.getControl(LodControl.class);
+                if (lodControl != null) {
+                    lodControl.setEnabled(true);
+                }
+                geometry.setLodLevel(0);
+            }
+        });
+
+        if (lodText != null) {
+            lodText.setText("LOD: auto");
+        }
     }
 
     /**
