@@ -33,6 +33,7 @@ import toniarts.openkeeper.view.map.MapViewController;
 import com.jme3.scene.Geometry;
 import com.jme3.scene.SceneGraphVisitor;
 import com.jme3.scene.Spatial;
+import com.jme3.scene.control.LodControl;
 import com.jme3.texture.Texture;
 import com.jme3.texture.Texture2D;
 import com.jme3.texture.plugins.AWTLoader;
@@ -57,6 +58,7 @@ import toniarts.openkeeper.Main;
 import toniarts.openkeeper.cinematics.CameraSweepData;
 import toniarts.openkeeper.cinematics.CameraSweepDataLoader;
 import toniarts.openkeeper.tools.convert.AssetsConverter;
+import toniarts.openkeeper.view.control.DistanceLodControl;
 import toniarts.openkeeper.tools.convert.KmfModelLoader;
 import toniarts.openkeeper.tools.convert.map.ArtResource;
 import toniarts.openkeeper.tools.convert.map.IKwdFile;
@@ -131,6 +133,7 @@ public final class AssetUtils {
     private static Spatial loadModel(final AssetManager assetManager, ModelKey assetKey, ArtResource artResource) {
         Spatial model = assetManager.loadModel(assetKey);
         resetSpatial(model);
+        useDistanceLod(model);
         
         // Assign maps
         assignMapsToMaterial(model, assetManager);
@@ -145,6 +148,23 @@ public final class AssetUtils {
         return model;
     }
     
+    /**
+     * Swaps the LOD controls of the model (made by the converter) to ones that select the level by the distance
+     * of the camera.
+     */
+    private static void useDistanceLod(Spatial model) {
+        model.depthFirstTraversal(new SceneGraphVisitor() {
+            @Override
+            public void visit(Spatial spatial) {
+                LodControl lodControl = spatial.getControl(LodControl.class);
+                if (lodControl != null && !(lodControl instanceof DistanceLodControl)) {
+                    spatial.removeControl(lodControl);
+                    spatial.addControl(new DistanceLodControl());
+                }
+            }
+        });
+    }
+
     private static void assignAnimatingTextures(Spatial model, AssetManager assetManager, Integer fps) {
         model.depthFirstTraversal(new SceneGraphVisitor() {
             @Override
