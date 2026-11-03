@@ -124,7 +124,7 @@ public final class ModelViewerScreenController implements ScreenController {
         if (overlays.itemCount() > 0) {
             overlays.selectItemByIndex(0);
         }
-        setLodLevels(0);
+        setLodLevels(0, 0);
         // Fill types
         app.fillTypes();
     }
@@ -230,11 +230,12 @@ public final class ModelViewerScreenController implements ScreenController {
 
     /**
      * Fill the LOD selection for a model with the given number of LOD levels,
-     * selecting the automatic mode
+     * keeping the given selection
+     * @param selectedIndex the index to select, 0 is auto
      *
      * @param levels number of LOD levels in the model, 0 if none
      */
-    void setLodLevels(int levels) {
+    void setLodLevels(int levels, int selectedIndex) {
         DropDown<String> dropDown = screen.findNiftyControl(ID_LOD, DropDown.class);
         if (dropDown == null) {
             return;
@@ -244,7 +245,7 @@ public final class ModelViewerScreenController implements ScreenController {
         for (int i = 0; i < levels; i++) {
             dropDown.addItem("LOD " + i);
         }
-        dropDown.selectItemByIndex(0);
+        dropDown.selectItemByIndex(Math.min(selectedIndex, levels));
     }
 
     void setLodSelection(int index) {

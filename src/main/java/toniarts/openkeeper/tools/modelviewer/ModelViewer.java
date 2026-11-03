@@ -165,6 +165,9 @@ public final class ModelViewer extends SimpleApplication {
     private Effect selectedEffect;
     private boolean lodAuto = true;
     private int lodLevel = 0;
+    private boolean lodTracking = false;
+    private int knownLodLevels = 0;
+    private float lodScanTimer = 0;
     private final Set<Integer> pressedKeys = new HashSet<>();
     private List<String> models;
     private List<String> maps;
@@ -417,6 +420,7 @@ public final class ModelViewer extends SimpleApplication {
 
     @Override
     public void simpleUpdate(float tpf) {
+        updateMapLod(tpf);
     }
 
     @Override
@@ -916,7 +920,7 @@ public final class ModelViewer extends SimpleApplication {
         });
 
         // Reset the forced LOD state for the newly loaded model
-        resetLod(spat);
+        resetLod(spat, isMap);
     }
 
     /**
@@ -955,18 +959,70 @@ public final class ModelViewer extends SimpleApplication {
 
         lodAuto = index <= 0;
         lodLevel = Math.max(0, index - 1);
+        applyLod(spat);
+        screen.setLodSelection(getLodIndex());
+    }
+
+    /**
+     * The objects and creatures of a map are created by the entity systems
+     * some time after the map itself, so keep the LOD options up to date with
+     * what is in the map.
+     */
+    private void updateMapLod(float tpf) {
+        lodScanTimer += tpf;
+        if (!lodTracking || lodScanTimer < 0.25f) {
+            return;
+        }
+        lodScanTimer = 0;
+
+        Spatial spat = rootNode.getChild(ModelViewer.NODE_NAME);
+        if (spat == null) {
+            return;
+        }
+        int levels = getMaxLodLevels(spat);
+        if (levels != knownLodLevels) {
+            knownLodLevels = levels;
+            screen.setLodLevels(levels, getLodIndex());
+        }
+        if (!lodAuto) {
+            applyLod(spat);
+        }
+    }
+
+    /**
+     * Apply the current LOD state to all the LOD geometries under the given
+     * spatial. Safe to repeat, needed for maps since their objects and
+     * creatures come and go after the map has been loaded.
+     */
+    private void applyLod(Spatial spat) {
+        final int[] counts = {0, 0};
         spat.depthFirstTraversal((Spatial spatial) -> {
-            if (spatial instanceof Geometry geometry && geometry.getMesh().getNumLodLevels() > 0) {
+            if (spatial instanceof Geometry geometry && isLodGeometry(geometry)) {
                 LodControl lodControl = geometry.getControl(LodControl.class);
-                if (lodControl != null) {
+                if (lodControl != null && lodControl.isEnabled() != lodAuto) {
                     lodControl.setEnabled(lodAuto);
                 }
                 if (!lodAuto) {
-                    geometry.setLodLevel(Math.min(lodLevel, geometry.getMesh().getNumLodLevels() - 1));
+                    int level = Math.min(lodLevel, geometry.getMesh().getNumLodLevels() - 1);
+                    counts[0]++;
+                    if (geometry.getLodLevel() != level) {
+                        geometry.setLodLevel(level);
+                        counts[1]++;
+                    }
                 }
             }
         });
-        screen.setLodSelection(getLodIndex());
+        if (counts[1] > 0) {
+            logger.log(Level.INFO, "LOD level {0}: {1} LOD geometries, {2} changed", lodLevel, counts[0], counts[1]);
+        }
+    }
+
+    /**
+     * Whether the LOD level of the geometry can be controlled. Geometries
+     * merged into a batch (map rooms, terrain) can't change their mesh.
+     */
+    private static boolean isLodGeometry(Geometry geometry) {
+        return geometry.getMesh().getNumLodLevels() > 0 && !geometry.isBatched();
     }
 
     /**
@@ -976,7 +1032,7 @@ public final class ModelViewer extends SimpleApplication {
         final int[] maxLods = {0};
         if (spat != null) {
             spat.depthFirstTraversal((Spatial spatial) -> {
-                if (spatial instanceof Geometry geometry) {
+                if (spatial instanceof Geometry geometry && isLodGeometry(geometry)) {
                     maxLods[0] = Math.max(maxLods[0], geometry.getMesh().getNumLodLevels());
                 }
             });
@@ -988,13 +1044,14 @@ public final class ModelViewer extends SimpleApplication {
      * Reset the LOD state of the given model back to automatic selection
      *
      * @param spat the model to reset
+     * @param isMap whether the model is a map, its LOD content is tracked
      */
-    private void resetLod(Spatial spat) {
+    private void resetLod(Spatial spat, boolean isMap) {
         lodAuto = true;
         lodLevel = 0;
 
         spat.depthFirstTraversal((Spatial spatial) -> {
-            if (spatial instanceof Geometry geometry && geometry.getMesh().getNumLodLevels() > 0) {
+            if (spatial instanceof Geometry geometry && isLodGeometry(geometry)) {
                 LodControl lodControl = geometry.getControl(LodControl.class);
                 if (lodControl != null) {
                     lodControl.setEnabled(true);
@@ -1003,7 +1060,9 @@ public final class ModelViewer extends SimpleApplication {
             }
         });
 
-        screen.setLodLevels(getMaxLodLevels(spat));
+        knownLodLevels = getMaxLodLevels(spat);
+        lodTracking = isMap;
+        screen.setLodLevels(knownLodLevels, 0);
     }
 
     /**
