@@ -207,6 +207,9 @@ public abstract class MapViewController implements ILoader<IKwdFile> {
 
         // Batch the terrain pages
         for (Node page : pages) {
+            BatchVertexCompactor.compact((BatchNode) page.getChild(FLOOR_INDEX));
+            BatchVertexCompactor.compact((BatchNode) page.getChild(WALL_INDEX));
+            BatchVertexCompactor.compact((BatchNode) page.getChild(TOP_INDEX));
             ((BatchNode) page.getChild(FLOOR_INDEX)).batch();
             ((BatchNode) page.getChild(WALL_INDEX)).batch();
             ((BatchNode) page.getChild(TOP_INDEX)).batch();
@@ -553,6 +556,7 @@ public abstract class MapViewController implements ILoader<IKwdFile> {
 
         // Batch
         for (BatchNode batchNode : nodesNeedBatching) {
+            BatchVertexCompactor.compact(batchNode);
             batchNode.batch();
             // Re-batching creates new batched geometries/materials in place,
             // so the page's region registration must be refreshed

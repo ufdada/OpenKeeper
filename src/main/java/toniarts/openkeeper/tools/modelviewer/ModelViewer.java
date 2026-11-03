@@ -995,7 +995,6 @@ public final class ModelViewer extends SimpleApplication {
      * creatures come and go after the map has been loaded.
      */
     private void applyLod(Spatial spat) {
-        final int[] counts = {0, 0};
         spat.depthFirstTraversal((Spatial spatial) -> {
             if (spatial instanceof Geometry geometry && isLodGeometry(geometry)) {
                 LodControl lodControl = geometry.getControl(LodControl.class);
@@ -1004,17 +1003,12 @@ public final class ModelViewer extends SimpleApplication {
                 }
                 if (!lodAuto) {
                     int level = Math.min(lodLevel, geometry.getMesh().getNumLodLevels() - 1);
-                    counts[0]++;
                     if (geometry.getLodLevel() != level) {
                         geometry.setLodLevel(level);
-                        counts[1]++;
                     }
                 }
             }
         });
-        if (counts[1] > 0) {
-            logger.log(Level.INFO, "LOD level {0}: {1} LOD geometries, {2} changed", lodLevel, counts[0], counts[1]);
-        }
     }
 
     /**

@@ -26,6 +26,7 @@ import toniarts.openkeeper.tools.convert.map.ArtResource;
 import toniarts.openkeeper.utils.AssetUtils;
 import toniarts.openkeeper.utils.WorldUtils;
 import toniarts.openkeeper.view.fogofwar.IFogOfWarInformation;
+import toniarts.openkeeper.view.map.BatchVertexCompactor;
 import toniarts.openkeeper.view.map.WallSection;
 
 /**
@@ -100,6 +101,7 @@ public abstract class RoomConstructor {
             floorNode.setShadowMode(getFloorShadowMode());
             applyLighting(floorNode, lightingMaterials);
             hideUnexploredFloorTiles(fogOfWarInformation);
+            BatchVertexCompactor.compact(floorNode);
             floorNode.batch();
             root.attachChild(floorNode);
         }
@@ -110,6 +112,7 @@ public abstract class RoomConstructor {
             wallNode.setName("Wall");
             wallNode.setShadowMode(getWallShadowMode());
             applyLighting(wallNode, lightingMaterials);
+            BatchVertexCompactor.compact(wallNode);
             wallNode.batch();
             root.attachChild(wallNode);
         }
@@ -277,6 +280,7 @@ public abstract class RoomConstructor {
         // recognizes and collects the already-swapped result for
         // per-tile light registration, it doesn't re-swap it.
         applyLighting(spatial, new ArrayList<>());
+        BatchVertexCompactor.compact(spatial);
         spatial.batch();
         return spatial;
     }
