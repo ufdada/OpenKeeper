@@ -17,7 +17,6 @@
 package toniarts.openkeeper.game.task;
 
 import com.badlogic.gdx.ai.pfa.GraphPath;
-import com.jme3.math.Vector2f;
 import com.simsilica.es.Entity;
 import com.simsilica.es.EntityData;
 import com.simsilica.es.EntityId;
@@ -70,6 +69,7 @@ import toniarts.openkeeper.game.listener.RoomListener;
 import toniarts.openkeeper.game.logic.IEntityPositionLookup;
 import toniarts.openkeeper.game.logic.IGameLogicUpdatable;
 import toniarts.openkeeper.game.map.IMapDataInformation;
+import toniarts.openkeeper.game.map.IMapTileController;
 import toniarts.openkeeper.game.map.IMapTileInformation;
 import toniarts.openkeeper.game.navigation.INavigationService;
 import toniarts.openkeeper.game.task.creature.ClaimLair;
@@ -128,6 +128,7 @@ public final class TaskManager implements ITaskManager, IGameLogicUpdatable {
     private final Map<Short, IPlayerController> playerControllers;
     private final Map<IRoomController, Map<Point, AbstractCapacityCriticalRoomTask>> roomTasks = new HashMap<>();
     private final Map<ICreatureController, Consumer<Boolean>> unemployedCreatures = new HashMap<>();
+    private final TaskWorkerPriorityComparator taskWorkerPriorityComparator = new TaskWorkerPriorityComparator();
 
     public TaskManager(EntityData entityData, IGameWorldController gameWorldController, IMapController mapController,
             IObjectsController objectsController, ICreaturesController creaturesController, INavigationService navigationService,
@@ -328,6 +329,21 @@ public final class TaskManager implements ITaskManager, IGameLogicUpdatable {
                 // Not interested
             }
 
+            @Override
+            public void onTilesReveal(List<Point> points, boolean explore, short keeperId) {
+                // Not interested
+            }
+
+            @Override
+            public void onFogOfWarDisabled(short keeperId) {
+                // Not interested
+            }
+
+            @Override
+            public void onFogOfWarReset(short keeperId) {
+                // Not interested
+            }
+
         });
 
         // Bridges! They open up new opportunities in new lands
@@ -430,55 +446,41 @@ public final class TaskManager implements ITaskManager, IGameLogicUpdatable {
     }
 
     private void scanInitialTasks() {
-        IMapDataInformation mapData = mapController.getMapData();
+        IMapDataInformation<IMapTileController> mapData = mapController.getMapData();
         for (int y = 0; y < mapData.getHeight(); y++) {
             for (int x = 0; x < mapData.getWidth(); x++) {
-                scanTerrainTasks(mapController.getMapData().getTile(x, y).getLocation(), false, false);
+                scanTerrainTasks(mapData.getTile(x, y), false, false);
             }
         }
     }
 
     private void scanTerrainTasks(final Point tile, final boolean checkNeighbours, final boolean deleteObsolete) {
+        scanTerrainTasks(mapController.getMapData().getTile(tile), tile, checkNeighbours, deleteObsolete);
+    }
+
+    private void scanTerrainTasks(final IMapTileController mapTile, final boolean checkNeighbours, final boolean deleteObsolete) {
+        scanTerrainTasks(mapTile, mapTile.getLocation(), checkNeighbours, deleteObsolete);
+    }
+
+    private void scanTerrainTasks(final IMapTileController mapTile, final Point tile, final boolean checkNeighbours, final boolean deleteObsolete) {
+        Terrain terrain = null;
+        if (mapTile != null) {
+            terrain = mapController.getTerrain(mapTile);
+        }
+
         for (Entry<Short, Set<Task>> entry : taskQueues.entrySet()) {
 
             // Scan existing tasks that are they valid, should be only one tile task per tile?
             if (deleteObsolete) {
-                Iterator<Task> iter = entry.getValue().iterator();
-                while (iter.hasNext()) {
-                    Task task = iter.next();
-                    if (task instanceof AbstractTileTask tileTask) {
-                        if (tileTask.isRemovable()) {
-                            iter.remove();
-                            if (tileTask.getAssigneeCount() == 0) {
-                                //tasksByIds.remove(task.getId());
-                            }
-                        }
-                    }
-                }
+                removeObsoleteTileTasks(entry.getValue());
+            }
+
+            if (mapTile == null) {
+                continue;
             }
 
             // Perhaps we should have a store for these, since only one of such per player can exist, would save IDs
-            // Dig
-            if (mapController.isSelected(tile, entry.getKey())) {
-                Task task = new DigTileTask(navigationService, mapController, tile, entry.getKey());
-                addTask(entry.getKey(), task);
-            } // Claim wall
-            else if (mapController.isClaimableWall(tile, entry.getKey())) {
-                Task task = new ClaimWallTileTask(navigationService, mapController, tile, entry.getKey());
-                addTask(entry.getKey(), task);
-            } // Claim
-            else if (mapController.isClaimableTile(tile, entry.getKey())) {
-                Task task = new ClaimTileTask(navigationService, mapController, tile, entry.getKey());
-                addTask(entry.getKey(), task);
-            } // Repair wall
-            else if (mapController.isRepairableWall(tile, entry.getKey())) {
-                Task task = new RepairWallTileTask(navigationService, mapController, tile, entry.getKey());
-                addTask(entry.getKey(), task);
-            } // Claim room
-            else if (mapController.isClaimableRoom(tile, entry.getKey())) {
-                Task task = new ClaimRoomTask(navigationService, mapController, tile, entry.getKey());
-                addTask(entry.getKey(), task);
-            }
+            createTerrainTask(entry.getKey(), terrain, mapTile, tile);
         }
 
         // See the neighbours
@@ -486,6 +488,39 @@ public final class TaskManager implements ITaskManager, IGameLogicUpdatable {
             for (Point p : WorldUtils.getSurroundingTiles(mapController.getMapData(), tile, false)) {
                 scanTerrainTasks(p, false, false);
             }
+        }
+    }
+
+    private void removeObsoleteTileTasks(Set<Task> tasks) {
+        Iterator<Task> iter = tasks.iterator();
+        while (iter.hasNext()) {
+            Task task = iter.next();
+            if (task instanceof AbstractTileTask tileTask && tileTask.isRemovable()) {
+                iter.remove();
+                if (tileTask.getAssigneeCount() == 0) {
+                    //tasksByIds.remove(task.getId());
+                }
+            }
+        }
+    }
+
+    private void createTerrainTask(short playerId, Terrain terrain, IMapTileController mapTile, Point tile) {
+
+        // Dig
+        if (mapController.isSelected(mapTile, playerId)) {
+            addTask(playerId, new DigTileTask(navigationService, mapController, tile, playerId));
+        } // Claim wall
+        else if (mapController.isClaimableWall(mapTile, terrain, playerId)) {
+            addTask(playerId, new ClaimWallTileTask(navigationService, mapController, tile, playerId));
+        } // Claim
+        else if (mapController.isClaimableTile(mapTile, terrain, playerId)) {
+            addTask(playerId, new ClaimTileTask(navigationService, mapController, tile, playerId));
+        } // Repair wall
+        else if (mapController.isRepairableWall(mapTile, terrain, playerId)) {
+            addTask(playerId, new RepairWallTileTask(navigationService, mapController, tile, playerId));
+        } // Claim room
+        else if (mapController.isClaimableRoom(mapTile, terrain, playerId)) {
+            addTask(playerId, new ClaimRoomTask(navigationService, mapController, tile, playerId));
         }
     }
 
@@ -667,7 +702,16 @@ public final class TaskManager implements ITaskManager, IGameLogicUpdatable {
                 break;
             }
             case KILL_PLAYER: {
-                task = new KillPlayer(navigationService, mapController, levelInfo, creature.getObjectiveTargetPlayerId(), creature);
+
+                // Without the keeper the creature has nobody to go after, it just carries on as usual
+                if (KillPlayer.isTargetPresent(levelInfo, creature.getObjectiveTargetPlayerId())) {
+                    task = new KillPlayer(navigationService, mapController, levelInfo, creature.getObjectiveTargetPlayerId(), creature);
+                }
+                break;
+            }
+            default: {
+
+                // The other objectives don't give the creature a task of its own
                 break;
             }
         }
@@ -814,16 +858,10 @@ public final class TaskManager implements ITaskManager, IGameLogicUpdatable {
             Consumer<Boolean> workResult = workerEntry.getValue();
             final Point currentLocation = creature.getCreatureCoordinates();
 
-            // Give points by distance and priority, no need to know can we do the task as this point as it might be a heavy check
+            // Give points by distance and priority. The distance is to the task's own tile: finding the spot to work from, and
+            // whether it can be reached, takes path finding, which canAssign() does only for the tasks being handed out (#671)
             for (Task task : taskQueue) {
-                Vector2f target = task.getTarget(creature);
-                if (target == null) {
-
-                    // Can't reach
-                    continue;
-                }
-
-                int points = WorldUtils.calculateDistance(currentLocation, WorldUtils.vectorToPoint(target)) + task.getPriority();
+                int points = WorldUtils.calculateDistance(currentLocation, task.getTaskLocation()) + task.getPriority();
                 priorizedTasks.add(new TaskWorkerPriority(task, creature, points, workResult));
             }
         }
@@ -832,7 +870,7 @@ public final class TaskManager implements ITaskManager, IGameLogicUpdatable {
         while (!unemployedWorkers.isEmpty() && !priorizedTasks.isEmpty()) {
 
             // With each iteration we sort to fill the jobs as even as possible (assignee count changes)
-            Collections.sort(priorizedTasks, (o1, o2) -> sortByTaskStatusAndDistance(o1, o2));
+            Collections.sort(priorizedTasks, taskWorkerPriorityComparator);
 
             Iterator<TaskWorkerPriority> iter = priorizedTasks.iterator();
             while (iter.hasNext()) {
@@ -863,25 +901,7 @@ public final class TaskManager implements ITaskManager, IGameLogicUpdatable {
         });
     }
 
-    private int sortByTaskStatusAndDistance(TaskWorkerPriority o1, TaskWorkerPriority o2) {
-
-        // Fill in jobs that have no workers first
-        int result = Integer.compare(o1.task.getAssigneeCount(), o2.task.getAssigneeCount());
-        if (result != 0) {
-            return result;
-        }
-
-        // Closest creature gets the job
-        result = Integer.compare(o1.points, o2.points);
-        if (result != 0) {
-            return result;
-        }
-
-        // If the same, compare by date added
-        return o1.task.getTaskCreated().compareTo(o2.task.getTaskCreated());
-    }
-
-    private static record TaskWorkerPriority(Task task, ICreatureController creature, int points, Consumer<Boolean> workResult) {
+    static record TaskWorkerPriority(Task task, ICreatureController creature, int points, Consumer<Boolean> workResult) {
 
     }
 

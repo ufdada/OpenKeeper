@@ -135,16 +135,19 @@ public interface IMapController extends IMapInformation<IMapTileController>, IGa
      *
      * @param point tile coordinate
      * @param playerId for the player
+     * @param creature the worker, its efficiency scales the work
      */
-    void applyClaimTile(Point point, short playerId);
+    void applyClaimTile(Point point, short playerId, ICreatureController creature);
 
     /**
      * Heal a tile
      *
      * @param point the point
      * @param playerId the player applying the healing
+     * @param creature the worker, its efficiency scales the work, {@code null}
+     * if nobody is working
      */
-    void healTile(Point point, short playerId);
+    void healTile(Point point, short playerId, ICreatureController creature);
 
     /**
      * Alter terrain type
@@ -171,6 +174,40 @@ public interface IMapController extends IMapInformation<IMapTileController>, IGa
      * @param playerId the player whose flashing will be affected
      */
     public void unFlashTiles(List<Point> points, short playerId);
+
+    /**
+     * Scripted reveal of an action point's tiles (fog of war). Fog of war is
+     * local, per-viewer view state, so this is purely a notification to the
+     * given player's client - no map/tile state is mutated here.
+     *
+     * @param points the points to reveal
+     * @param playerId the player whose fog of war is affected
+     */
+    public void revealTiles(List<Point> points, short playerId);
+
+    /**
+     * Scripted conceal of an action point's tiles (fog of war). See
+     * {@link #revealTiles(List, short)}.
+     *
+     * @param points the points to conceal
+     * @param playerId the player whose fog of war is affected
+     */
+    public void concealTiles(List<Point> points, short playerId);
+
+    /**
+     * The {@code REMOVE_FOW} cheat: disable fog of war for the given player
+     *
+     * @param playerId the player whose fog of war is affected
+     */
+    public void disableFogOfWar(short playerId);
+
+    /**
+     * The {@code RESET_FOW} console command: reset fog of war for the given
+     * player, as if the level had just started
+     *
+     * @param playerId the player whose fog of war is affected
+     */
+    public void resetFogOfWar(short playerId);
 
     /**
      * Get the same terrain adjacent (not diagonally) to the stating point(s).

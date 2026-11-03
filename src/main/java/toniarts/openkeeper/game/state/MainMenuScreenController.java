@@ -16,8 +16,6 @@
  */
 package toniarts.openkeeper.game.state;
 
-import com.jme3.audio.AudioData;
-import com.jme3.audio.AudioNode;
 import com.jme3.input.KeyNames;
 import com.jme3.system.AppSettings;
 import de.lessvoid.nifty.Nifty;
@@ -54,7 +52,9 @@ import toniarts.openkeeper.game.network.chat.ChatClientService;
 import toniarts.openkeeper.game.network.chat.ChatSessionListener;
 import toniarts.openkeeper.game.sound.GlobalCategory;
 import toniarts.openkeeper.game.sound.GlobalType;
+import toniarts.openkeeper.game.sound.MentorType;
 import toniarts.openkeeper.game.sound.SoundCategory;
+import toniarts.openkeeper.game.sound.SoundManager;
 import toniarts.openkeeper.game.state.lobby.ClientInfo;
 import toniarts.openkeeper.game.state.lobby.LobbySession;
 import toniarts.openkeeper.game.state.lobby.LobbySessionListener;
@@ -67,11 +67,10 @@ import toniarts.openkeeper.gui.nifty.table.TableControl;
 import toniarts.openkeeper.gui.nifty.table.TableRow;
 import toniarts.openkeeper.gui.nifty.table.player.PlayerTableBuilder;
 import toniarts.openkeeper.gui.nifty.table.player.PlayerTableRow;
-import toniarts.openkeeper.tools.convert.AssetsConverter;
 import toniarts.openkeeper.tools.convert.map.AI;
 import toniarts.openkeeper.tools.convert.map.GameLevel;
+import toniarts.openkeeper.tools.convert.map.IKwdFile;
 import toniarts.openkeeper.tools.convert.map.IKwdMap;
-import toniarts.openkeeper.tools.modelviewer.SoundsLoader;
 import toniarts.openkeeper.utils.AssetUtils;
 import toniarts.openkeeper.utils.DisplayMode;
 import toniarts.openkeeper.utils.DisplayModeUtils;
@@ -84,7 +83,9 @@ import java.lang.System.Logger;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.ResourceBundle;
 
 /**
@@ -96,7 +97,6 @@ public final class MainMenuScreenController implements IMainMenuScreenController
     private static final Logger logger = System.getLogger(MainMenuScreenController.class.getName());
 
     private static final String OBJECTIVE_IMAGE_URL = "Textures/Obj_Shots/%s-%d.png";
-    private static final String BRIEFING_SPEECH_URL = "Sounds/speech_mentor/speech_mentorHD/lev%02d001.mp2";
 
     private final MainMenuState state;
     private Nifty nifty;
@@ -104,6 +104,8 @@ public final class MainMenuScreenController implements IMainMenuScreenController
     private static final List<Cutscene> CUTSCENES = new ArrayList<>();
     private ChatSessionListener chatSessionListener;
     private LobbySessionListener lobbySessionListener;
+    private String cutsceneMovieName;
+    private final Map<String, Runnable> screenStartHandlers = createScreenStartHandlers();
 
     /**
      * A popup instance if some screen should need one
@@ -111,37 +113,59 @@ public final class MainMenuScreenController implements IMainMenuScreenController
     private Element popupElement;
 
     static {
-        CUTSCENES.add(new Cutscene("Intro", "INTRO", "${menu.77}"));
-        CUTSCENES.add(new Cutscene("000", "CutSceneLevel1", "${speech.1417}"));
-        CUTSCENES.add(new Cutscene("001", "CutSceneLevel2", "${speech.1439}"));
-        CUTSCENES.add(new Cutscene("002", "CutSceneLevel3", "${speech.1435}"));
-        CUTSCENES.add(new Cutscene("003", "CutSceneLevel4", "${speech.1445}"));
-        CUTSCENES.add(new Cutscene("004", "CutSceneLevel5", "${speech.1428}"));
-        CUTSCENES.add(new Cutscene("005", "CutSceneLevel6", "${speech.1426}"));
-        CUTSCENES.add(new Cutscene("006", "CutSceneLevel7", "${speech.1430}"));
-        CUTSCENES.add(new Cutscene("007", "CutSceneLevel8", "${speech.1432}"));
-        CUTSCENES.add(new Cutscene("008", "CutSceneLevel9", "${speech.1441}"));
-        CUTSCENES.add(new Cutscene("009", "CutSceneLevel10", "${speech.1431}"));
-        CUTSCENES.add(new Cutscene("010", "CutSceneLevel11", "${speech.1433}"));
-        CUTSCENES.add(new Cutscene("011", "CutSceneLevel12", "${speech.1419}"));
-        CUTSCENES.add(new Cutscene("012", "CutSceneLevel13", "${speech.1414}"));
-        CUTSCENES.add(new Cutscene("013", "CutSceneLevel14", "${speech.1437}"));
-        CUTSCENES.add(new Cutscene("014", "CutSceneLevel15", "${speech.1416}"));
-        CUTSCENES.add(new Cutscene("015", "CutSceneLevel16", "${speech.1420}"));
-        CUTSCENES.add(new Cutscene("016", "CutSceneLevel17", "${speech.1421}"));
-        CUTSCENES.add(new Cutscene("017", "CutSceneLevel18", "${speech.1443}"));
-        CUTSCENES.add(new Cutscene("018", "CutSceneLevel19", "${speech.1422}"));
-        CUTSCENES.add(new Cutscene("Outro", "Outro", "${menu.2843}"));
+        CUTSCENES.add(new Cutscene( 0,"Intro", "INTRO", "${menu.77}", ""));
+        CUTSCENES.add(new Cutscene( 1,"000", "CutSceneLevel1", "${speech.1417}", "149"));
+        CUTSCENES.add(new Cutscene( 2,"001", "CutSceneLevel2", "${speech.1439}", "171"));
+        CUTSCENES.add(new Cutscene( 3,"002", "CutSceneLevel3", "${speech.1435}", "165"));
+        CUTSCENES.add(new Cutscene( 4,"003", "CutSceneLevel4", "${speech.1445}", "177"));
+        CUTSCENES.add(new Cutscene( 5,"004", "CutSceneLevel5", "${speech.1428}", "160"));
+        CUTSCENES.add(new Cutscene( 6,"005", "CutSceneLevel6", "${speech.1426}", "158"));
+        CUTSCENES.add(new Cutscene( 7,"006", "CutSceneLevel7", "${speech.1430}", "162"));
+        CUTSCENES.add(new Cutscene( 8,"007", "CutSceneLevel8", "${speech.1432}", "164"));
+        CUTSCENES.add(new Cutscene( 9,"008", "CutSceneLevel9", "${speech.1441}", "173"));
+        CUTSCENES.add(new Cutscene(10,"009", "CutSceneLevel10", "${speech.1431}", "163"));
+        CUTSCENES.add(new Cutscene(11,"010", "CutSceneLevel11", "${speech.1433}", "167"));
+        CUTSCENES.add(new Cutscene(12,"011", "CutSceneLevel12", "${speech.1419}", "151"));
+        CUTSCENES.add(new Cutscene(13,"012", "CutSceneLevel13", "${speech.1414}", "146"));
+        CUTSCENES.add(new Cutscene(14,"013", "CutSceneLevel14", "${speech.1437}", "169"));
+        CUTSCENES.add(new Cutscene(15,"014", "CutSceneLevel15", "${speech.1416}", "148"));
+        CUTSCENES.add(new Cutscene(16,"015", "CutSceneLevel16", "${speech.1420}", "152"));
+        CUTSCENES.add(new Cutscene(17,"016", "CutSceneLevel17", "${speech.1421}", "153"));
+        CUTSCENES.add(new Cutscene(18,"017", "CutSceneLevel18", "${speech.1443}", "175"));
+        CUTSCENES.add(new Cutscene(19,"018", "CutSceneLevel19", "${speech.1422}", "154"));
+        CUTSCENES.add(new Cutscene(20,"Outro", "Outro", "${menu.2843}",""));
     }
 
     public MainMenuScreenController(MainMenuState state, Nifty nifty) {
         this.state = state;
         this.nifty = nifty;
 
-        SoundCategory sc = SoundsLoader.load(GlobalCategory.FRONT_END);
-        String filename = sc.getGroup(GlobalType.FRONT_END_CKICK).getFiles().get(0).getFilename();
-        this.nifty.registerSound(SOUND_MENU_ID, AssetsConverter.SOUNDS_FOLDER + File.separator + filename);
-        this.nifty.registerSound(SOUND_BUTTON_ID, "Sounds/Global/FrontEndHD/FE BUTTON BIG 5.mp2");
+        String menuSound = SoundManager.getSoundAssetPath(GlobalCategory.FRONT_END, GlobalType.FRONT_END_CKICK);
+        if (menuSound != null) {
+            this.nifty.registerSound(SOUND_MENU_ID, menuSound);
+        }
+        String buttonSound = SoundManager.getSoundAssetPath(GlobalCategory.GUI_BUTTON_DEFAULT, GlobalType.GUI_BUTTON_CKICK);
+        if (buttonSound != null) {
+            this.nifty.registerSound(SOUND_BUTTON_ID, buttonSound);
+        }
+    }
+
+    /**
+     * Plays the mentor speech of a campaign level.
+     *
+     * @param level the 1-based level number
+     * @param index {@code 0} for the briefing, {@code 1} for winning and
+     * {@code 2} for losing
+     * @return a sound handle, {@code 0} if there is no such speech
+     */
+    private int playLevelSpeech(int level, int index) {
+        MentorType speech = MentorType.forLevel(level, index);
+        if (speech == null) {
+            logger.log(Logger.Level.WARNING, "No mentor speech {0} for level {1}", new Object[]{index, level});
+            return 0;
+        }
+
+        return SoundManager.playSound(SoundCategory.SPEECH_MENTOR, speech.getId());
     }
 
     @Override
@@ -274,6 +298,7 @@ public final class MainMenuScreenController implements IMainMenuScreenController
         DropDown aa = screen.findNiftyControl("antialiasing", DropDown.class);
         DropDown af = screen.findNiftyControl("anisotropicFiltering", DropDown.class);
         CheckBox ssao = screen.findNiftyControl("ssao", CheckBox.class);
+        CheckBox gamma = screen.findNiftyControl("gammaCorrection", CheckBox.class);
         DisplayMode mdm = (DisplayMode) res.getSelection();
 
         // TODO: See if we need a restart, but keep in mind that the settings are saved in the restart
@@ -287,6 +312,7 @@ public final class MainMenuScreenController implements IMainMenuScreenController
         settings.getAppSettings().setSamples((Integer) aa.getSelection());
         settings.setSetting(Settings.Setting.ANISOTROPY, af.getSelection());
         settings.setSetting(Settings.Setting.SSAO, ssao.isChecked());
+        settings.getAppSettings().setGammaCorrection(gamma.isChecked());
 
         // This fails and crashes on invalid settings
         if (needToRestart) {
@@ -308,8 +334,11 @@ public final class MainMenuScreenController implements IMainMenuScreenController
             goToScreen("myPetDungeonMapSelect");
         } else if (state.selectedLevel instanceof CampaignLevel lvl && lvl.getType().equals(LevelType.MPD)) {
             goToScreen("myPetDungeon");
-        } else {
+        } else if (state.selectedLevel != null) {
             doTransition("254", "selectCampaignLevel", null);
+        } else {
+            // Skirmish / multiplayer debriefing, return to the single player screen
+            doTransition("272", "singlePlayer", "274");
         }
         state.selectedLevel = null;
     }
@@ -355,131 +384,118 @@ public final class MainMenuScreenController implements IMainMenuScreenController
     public void onStartScreen() {
         setScreen(nifty.getCurrentScreen());
 
-        switch (screen.getScreenId()) {
-            case "selectCampaignLevel":
-                state.inputManager.addRawInputListener(state.listener);
-                state.showArrows();
-                break;
+        Runnable handler = screenStartHandlers.get(screen.getScreenId());
+        if (handler != null) {
+            handler.run();
+        }
+    }
 
-            case "briefing":
-                showBriefing();
-                break;
+    /**
+     * Maps a screen id to the action that sets it up, so that {@link #onStartScreen()} stays a
+     * simple dispatch instead of one big branching switch
+     */
+    private Map<String, Runnable> createScreenStartHandlers() {
+        Map<String, Runnable> handlers = new HashMap<>();
+        handlers.put("selectCampaignLevel", this::showSelectCampaignLevelScreen);
+        handlers.put("briefing", this::showBriefing);
+        handlers.put("hiscores", this::generateHiscoreList);
+        handlers.put("optionsGraphics", this::setGraphicsSettingsToGUI);
+        handlers.put("optionsControl", this::setControlSettingsToGUI);
+        handlers.put("optionsSound", this::setSoundSettingsToGUI);
+        handlers.put("movies", this::generateMovieList);
+        handlers.put("cutscene", this::showCutsceneScreen);
+        handlers.put("multiplayer", () -> state.mapSelector.reset());
+        handlers.put("multiplayerWatch", this::showMultiplayerWatchScreen);
+        handlers.put("skirmishLobby", this::showSkirmishLobbyScreen);
+        handlers.put("multiplayerLocal", this::showMultiplayerLocalScreen);
+        handlers.put("skirmishMapSelect", () -> populateMapSelection(true));
+        handlers.put("myPetDungeon", this::unlockMPDMaps);
+        handlers.put("myPetDungeonMapSelect", this::showMyPetDungeonMapSelectScreen);
+        return handlers;
+    }
 
-            case "hiscores":
-                generateHiscoreList();
-                break;
+    private void showSelectCampaignLevelScreen() {
+        state.inputManager.addRawInputListener(state.listener);
+        state.refreshCampaignMap();
+        state.showArrows();
+    }
 
-            case "optionsGraphics":
-                // Populate settings screen
-                setGraphicsSettingsToGUI();
-                break;
+    private void showCutsceneScreen() {
+        screen.findNiftyControl("cutsceneMovieName", Label.class).setText(cutsceneMovieName);
+    }
 
-            case "optionsControl":
-                setControlSettingsToGUI();
-                break;
+    private void showMyPetDungeonMapSelectScreen() {
+        state.mapSelector.setMPD(true);
+        populateMapSelection(false);
+    }
 
-            case "optionsSound":
-                setSoundSettingsToGUI();
-                break;
+    private void showMultiplayerWatchScreen() {
+        TextField player = screen.findNiftyControl("playerName", TextField.class);
+        TextField hostAddress = screen.findNiftyControl("hostAddress", TextField.class);
+        player.setText(Main.getUserSettings().getSetting(Settings.Setting.PLAYER_NAME).toString());
+        hostAddress.setText(Main.getUserSettings().getSetting(Settings.Setting.MULTIPLAYER_LAST_IP).toString());
+    }
 
-            case "movies":
-                generateMovieList();
-                break;
+    private void showMultiplayerLocalScreen() {
+        state.mapSelector.reset();
 
-            case "multiplayer":
-                state.mapSelector.reset();
-                break;
+        // Set the game & user name
+        TextField player = screen.findNiftyControl("playerName", TextField.class);
+        TextField game = screen.findNiftyControl("gameName", TextField.class);
+        player.setText(Main.getUserSettings().getSetting(Settings.Setting.PLAYER_NAME).toString());
+        game.setText(Main.getUserSettings().getSetting(Settings.Setting.GAME_NAME).toString());
+    }
 
-            case "multiplayerWatch":
-                TextField player = screen.findNiftyControl("playerName", TextField.class);
-                TextField hostAddress = screen.findNiftyControl("hostAddress", TextField.class);
-                player.setText(Main.getUserSettings().getSetting(Settings.Setting.PLAYER_NAME).toString());
-                hostAddress.setText(Main.getUserSettings().getSetting(Settings.Setting.MULTIPLAYER_LAST_IP).toString());
-                break;
+    private void showSkirmishLobbyScreen() {
+        LobbyState lobbyState = state.getLobbyState();
 
-            case "skirmishLobby":
+        // Set up the players table
+        setupPlayersTable(lobbyState);
 
-                LobbyState lobbyState = state.getLobbyState();
+        // Add chat listener
+        if (lobbyState.isOnline() && chatSessionListener == null) {
+            Chat chat = screen.findNiftyControl("multiplayerChat", Chat.class);
+            chat.clear();
+            state.getChatService().addChatSessionListener(getChatSessionListener());
+        }
+        screen.findElementById("chatPanel").setVisible(lobbyState.isOnline());
 
-                // Set up the players table
-                setupPlayersTable(lobbyState);
+        // Add player listener
+        lobbyState.addLobbySessionListener(getLobbySessionListener());
 
-                // Add chat listener
-                if (lobbyState.isOnline() && chatSessionListener == null) {
-                    Chat chat = screen.findNiftyControl("multiplayerChat", Chat.class);
-                    chat.clear();
-                    state.getChatService().addChatSessionListener(getChatSessionListener());
-                }
-                screen.findElementById("chatPanel").setVisible(lobbyState.isOnline());
+        // Ask for players and map
+        refreshPlayerList(lobbyState.getLobbySession().getPlayers());
+        populateSelectedMap(state.mapSelector.getMap(lobbyState.getLobbySession().getMap()));
 
-                // Add player listener
-                lobbyState.addLobbySessionListener(getLobbySessionListener());
+        Label title = screen.findNiftyControl("multiplayerTitle", Label.class);
+        if (title != null) {
+            title.setText(lobbyState.getGameName());
+        }
+        setSkirmishLobbyControlVisibility("multiplayerMapControl", lobbyState.isHosting());
+        setSkirmishLobbyControlVisibility("multiplayerPlayerControl", lobbyState.isHosting());
 
-                // Ask for players and map
-                refreshPlayerList(lobbyState.getLobbySession().getPlayers());
-                populateSelectedMap(state.mapSelector.getMap(lobbyState.getLobbySession().getMap()));
+        // Set the IP, is is really always our IP, not the servers?
+        Label ip = screen.findNiftyControl("ip", Label.class);
+        if (lobbyState.isOnline()) {
+            ip.setText("IP: " + Utils.getLocalIPAddress());
+        } else {
+            ip.setText(null);
+        }
+        TextRenderer renderer = ip.getElement().getRenderer(TextRenderer.class);
+        ip.setWidth(new SizeValue(renderer.getTextWidth() + "px"));
 
-                Label title = screen.findNiftyControl("multiplayerTitle", Label.class);
-                if (title != null) {
-                    title.setText(lobbyState.getGameName());
-                }
-                Element element = screen.findElementById("multiplayerMapControl");
-                if (element != null) {
-                    if (!lobbyState.isHosting()) {
-                        element.hide();
-                    } else {
-                        element.show();
-                    }
-                }
-                element = screen.findElementById("multiplayerPlayerControl");
-                if (element != null) {
-                    if (!lobbyState.isHosting()) {
-                        element.hide();
-                    } else {
-                        element.show();
-                    }
-                }
+        screen.layoutLayers();
+    }
 
-                // Set the IP, is is really always our IP, not the servers?
-                Label ip = screen.findNiftyControl("ip", Label.class);
-                if (lobbyState.isOnline()) {
-                    ip.setText("IP: " + Utils.getLocalIPAddress());
-                } else {
-                    ip.setText(null);
-                }
-                TextRenderer renderer = ip.getElement().getRenderer(TextRenderer.class);
-                ip.setWidth(new SizeValue(renderer.getTextWidth() + "px"));
-
-                screen.layoutLayers();
-
-                break;
-
-            case "multiplayerLocal":
-                state.mapSelector.reset();
-
-                // Set the game & user name
-                player = screen.findNiftyControl("playerName", TextField.class);
-                TextField game = screen.findNiftyControl("gameName", TextField.class);
-                player.setText(Main.getUserSettings().getSetting(Settings.Setting.PLAYER_NAME).toString());
-                game.setText(Main.getUserSettings().getSetting(Settings.Setting.GAME_NAME).toString());
-                // multiplayerRefresh();
-                break;
-
-            case "skirmishMapSelect":
-                // Populate the maps
-                populateMapSelection(true);
-                break;
-
-            case "myPetDungeon":
-                // check unlocked levels
-                unlockMPDMaps();
-                break;
-
-            case "myPetDungeonMapSelect":
-                // Populate the maps
-                state.mapSelector.setMPD(true);
-                populateMapSelection(false);
-                break;
+    private void setSkirmishLobbyControlVisibility(String elementId, boolean visible) {
+        Element element = screen.findElementById(elementId);
+        if (element == null) {
+            return;
+        }
+        if (visible) {
+            element.show();
+        } else {
+            element.hide();
         }
     }
 
@@ -520,6 +536,10 @@ public final class MainMenuScreenController implements IMainMenuScreenController
         // Close any possible popups, otherwise they stay on the screen they were opened on...
         closePopup();
 
+        if (nifty.getCurrentScreen() == null) {
+            return;
+        }
+
         switch (nifty.getCurrentScreen().getScreenId()) {
             case "selectCampaignLevel":
                 state.inputManager.removeRawInputListener(state.listener);
@@ -532,6 +552,7 @@ public final class MainMenuScreenController implements IMainMenuScreenController
 
             case "debriefing":
                 state.clearLevelDebriefingNarration();
+                state.clearDebriefing();
                 break;
 
             case "skirmishLobby":
@@ -655,6 +676,32 @@ public final class MainMenuScreenController implements IMainMenuScreenController
                 hiscoreControl.build(hiscoreList);
             }
         }
+    }
+
+    /**
+     * Finds the cutscene registered for the given campaign level
+     *
+     * @param level the campaign level number
+     * @return the cutscene, or {@code null} if the level has none
+     */
+    public static Cutscene getCutscene(int level) {
+        for (Cutscene cutscene : CUTSCENES) {
+            if (cutscene.level == level) {
+                return cutscene;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Shows the cutscene screen, a black screen with the movie name centered on it. The actual
+     * speech and movie playback is driven by {@link CutsceneState}.
+     *
+     * @param movieName the movie name to display
+     */
+    public void showCutscene(String movieName) {
+        this.cutsceneMovieName = movieName;
+        nifty.gotoScreen(SCREEN_CUTSCENE_ID);
     }
 
     /**
@@ -802,6 +849,10 @@ public final class MainMenuScreenController implements IMainMenuScreenController
         // SSAO
         CheckBox ssao = screen.findNiftyControl("ssao", CheckBox.class);
         ssao.setChecked(Main.getUserSettings().getBoolean(Settings.Setting.SSAO));
+
+        // Gamma correction
+        CheckBox gamma = screen.findNiftyControl("gammaCorrection", CheckBox.class);
+        gamma.setChecked(settings.isGammaCorrection());
     }
 
     private void setControlSettingsToGUI() {
@@ -1175,11 +1226,15 @@ public final class MainMenuScreenController implements IMainMenuScreenController
         protected String image;
         protected String click;
         protected String moviename;
+        private String speechId;
+        private int level;
 
-        public Cutscene(String image, String click, String moviename) {
+        public Cutscene(final int level, final String image,final String click,final String moviename, final String speechId) {
+            this.level = level;
             this.image = image;
             this.click = click;
             this.moviename = moviename;
+            this.speechId = speechId;
         }
 
         /**
@@ -1224,6 +1279,10 @@ public final class MainMenuScreenController implements IMainMenuScreenController
         private boolean isLevelCompleted(CampaignLevel level) {
             return Settings.getInstance().getLevelStatus(level).equals(LevelStatus.COMPLETED);
         }
+
+        public String getSpeechId() {
+            return speechId;
+        }
     }
 
     private void showBriefing() {
@@ -1249,12 +1308,10 @@ public final class MainMenuScreenController implements IMainMenuScreenController
         levelTitle.setText(gameLevel.getTitle());
         mainObjective.setText(gameLevel.getMainObjective());
 
-        String objectiveImage = String.format(OBJECTIVE_IMAGE_URL, gameLevel.getName(), 0);
+        String objectiveImage = AssetUtils.getCanonicalAssetKey(String.format(OBJECTIVE_IMAGE_URL, gameLevel.getName(), 0));
         try {
-            img = nifty.createImage(objectiveImage, false);
+            img = nifty.createImage(objectiveImage, true);
             mainObjectiveImage.getRenderer(ImageRenderer.class).setImage(img);
-            mainObjectiveImage.setWidth(img.getWidth());
-            mainObjectiveImage.setHeight(img.getHeight());
             mainObjectiveImage.show();
         } catch (Exception e) {
             logger.log(Logger.Level.WARNING, "Can''t find image {0}", objectiveImage);
@@ -1278,12 +1335,10 @@ public final class MainMenuScreenController implements IMainMenuScreenController
             subObjectiveImage.hide();
 
             if (state.selectedLevel instanceof CampaignLevel lvl && lvl.getType().equals(LevelType.Level)) {
-                objectiveImage = String.format(OBJECTIVE_IMAGE_URL, gameLevel.getName(), 1);
+                objectiveImage = AssetUtils.getCanonicalAssetKey(String.format(OBJECTIVE_IMAGE_URL, gameLevel.getName(), 1));
                 try {
-                    img = nifty.createImage(objectiveImage, false);
+                    img = nifty.createImage(objectiveImage, true);
                     subObjectiveImage.getRenderer(ImageRenderer.class).setImage(img);
-                    subObjectiveImage.setWidth(img.getWidth());
-                    subObjectiveImage.setHeight(img.getHeight());
                     subObjectiveImage.show();
                 } catch (Exception e) {
                     logger.log(Logger.Level.WARNING, "Can''t find image {0}", objectiveImage);
@@ -1291,19 +1346,12 @@ public final class MainMenuScreenController implements IMainMenuScreenController
                 }
 
                 // Play some tunes!!
-                AudioNode audioNode = new AudioNode(state.assetManager,
-                        AssetUtils.getCanonicalAssetKey(String.format(BRIEFING_SPEECH_URL, lvl.getLevel())),
-                        AudioData.DataType.Buffer);
-                audioNode.setLooping(false);
-                audioNode.setDirectional(false);
-                audioNode.setPositional(false);
-                audioNode.play();
-                state.setLevelBriefing(audioNode);
+                state.setLevelBriefing(playLevelSpeech(lvl.getLevel(), 0));
             }
         }
     }
 
-    public void showDebriefing(GameResult result) {
+    public void showDebriefing() {
         Screen deScreen = nifty.getScreen(SCREEN_DEBRIEFING_ID);
 
         Label levelTitle = deScreen.findNiftyControl("dLevelTitle", Label.class);
@@ -1311,16 +1359,16 @@ public final class MainMenuScreenController implements IMainMenuScreenController
         Element mainObjectiveImage = deScreen.findElementById("dMainObjectiveImage");
         Element subObjectiveImage = deScreen.findElementById("dSubObjectiveImage");
 
-        NiftyImage img = null;
-        GameLevel gameLevel = state.selectedLevel.getKwdMap().getGameLevel();
+        IKwdFile level = state.getDebriefingLevel();
+        GameLevel gameLevel = level.getGameLevel();
         levelTitle.setText(gameLevel.getTitle());
-        String objectiveImage = String.format(OBJECTIVE_IMAGE_URL, gameLevel.getName(), 0);
+        boolean campaign = state.isDebriefingCampaign();
+        String objectiveImage = AssetUtils.getCanonicalAssetKey(String.format(OBJECTIVE_IMAGE_URL, gameLevel.getName(), 0));
         try {
-            img = nifty.createImage(objectiveImage, false);
-            mainObjectiveImage.getRenderer(ImageRenderer.class).setImage(img);
-            mainObjectiveImage.setWidth(img.getWidth());
-            mainObjectiveImage.setHeight(img.getHeight());
+            NiftyImage img = nifty.createImage(objectiveImage, true);
             mainObjectiveImage.show();
+            mainObjectiveImage.getRenderer(ImageRenderer.class).setImage(img);
+
         } catch (Exception e) {
             logger.log(Logger.Level.WARNING, "Can''t find image {0}", objectiveImage);
             mainObjectiveImage.hide();
@@ -1331,13 +1379,11 @@ public final class MainMenuScreenController implements IMainMenuScreenController
         Label specialsFound = deScreen.findNiftyControl("specialsFound", Label.class);
 
         subObjectiveImage.hide();
-        if (state.selectedLevel instanceof CampaignLevel lvl && lvl.getType().equals(LevelType.Level)) {
-            objectiveImage = String.format(OBJECTIVE_IMAGE_URL, gameLevel.getName(), 1);
+        if (campaign && state.selectedLevel instanceof CampaignLevel lvl && lvl.getType().equals(LevelType.Level)) {
+            objectiveImage = AssetUtils.getCanonicalAssetKey(String.format(OBJECTIVE_IMAGE_URL, gameLevel.getName(), 1));
             try {
-                img = nifty.createImage(objectiveImage, false);
+                NiftyImage img = nifty.createImage(objectiveImage, true);
                 subObjectiveImage.getRenderer(ImageRenderer.class).setImage(img);
-                subObjectiveImage.setWidth(img.getWidth());
-                subObjectiveImage.setHeight(img.getHeight());
                 subObjectiveImage.show();
             } catch (Exception e) {
                 logger.log(Logger.Level.WARNING, "Can''t find image {0}", objectiveImage);
@@ -1345,23 +1391,15 @@ public final class MainMenuScreenController implements IMainMenuScreenController
             }
         }
 
-        boolean levelWon = result.getData(GameResult.ResultType.LEVEL_WON);
+        // FIXME: GameResult has no data yet and also get it from the client state directly
+        boolean levelWon = true; // result.getData(GameResult.ResultType.LEVEL_WON);
         deScreen.findNiftyControl("levelWon", Label.class).setText(levelWon ? "${menu.21}" : "${menu.22}");
-        int timeTaken = Math.round(result.getData(GameResult.ResultType.TIME_TAKEN));
+        int timeTaken = 0; //Math.round(result.getData(GameResult.ResultType.TIME_TAKEN));
         deScreen.findNiftyControl("timeTaken", Label.class).setText(Utils.timeToString(timeTaken));
 
         // Play debriefing narration
-        if (state.selectedLevel instanceof CampaignLevel) {
-            CampaignLevel level = (CampaignLevel) state.selectedLevel;
-            String speech = String.format("Sounds/speech_mentor/speech_mentorHD/lev%02d002.mp2", level.getLevel());
-            AudioNode audioNode = new AudioNode(state.assetManager,
-                    AssetUtils.getCanonicalAssetKey(speech),
-                    AudioData.DataType.Buffer);
-            audioNode.setLooping(false);
-            audioNode.setDirectional(false);
-            audioNode.setPositional(false);
-            audioNode.play();
-            state.setLevelDebriefing(audioNode);
+        if (campaign && state.selectedLevel instanceof CampaignLevel lvl) {
+            state.setLevelDebriefing(playLevelSpeech(lvl.getLevel(), levelWon ? 1 : 2));
         }
 
         goToScreen(SCREEN_DEBRIEFING_ID);

@@ -16,15 +16,22 @@
  */
 package toniarts.openkeeper.view.map.construction;
 
-import com.jme3.anim.AnimComposer;
 import com.jme3.asset.AssetManager;
+import com.jme3.asset.TextureKey;
+import com.jme3.material.Material;
 import com.jme3.math.FastMath;
 import com.jme3.scene.BatchNode;
+import com.jme3.scene.Geometry;
 import com.jme3.scene.Node;
+import com.jme3.scene.SceneGraphVisitor;
 import com.jme3.scene.Spatial;
+import com.jme3.texture.Texture;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.List;
+import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import toniarts.openkeeper.tools.convert.map.Creature;
 import toniarts.openkeeper.tools.convert.map.IKwdFile;
 import toniarts.openkeeper.utils.Point;
@@ -48,6 +55,25 @@ import javax.annotation.Nonnull;
  * @author Toni Helenius <helenius.toni@gmail.com>
  */
 public final class HeroGateFrontEndConstructor extends RoomConstructor {
+
+    private static final Logger logger = Logger.getLogger(HeroGateFrontEndConstructor.class.getName());
+
+    // Blue highlighted (_E) levels by the currently active level number. Only
+    // meaningful after level 5 is completed. Keyed by Settings.getNextPlayableLevel().
+    private static final Map<Integer, Set<Integer>> HIGHLIGHT_BY_ACTIVE_LEVEL = Map.ofEntries(
+            Map.entry(6, Set.of(7, 8)),
+            Map.entry(7, Set.of(7, 8, 10)),
+            Map.entry(8, Set.of(8, 10, 12)),
+            Map.entry(9, Set.of(10, 12)),
+            Map.entry(10, Set.of(12)),
+            Map.entry(11, Set.of(11, 12, 16)),
+            Map.entry(13, Set.of(13, 16)),
+            Map.entry(17, Set.of(17, 18)));
+
+    /**
+     * Name of the node holding the creature that shows the MPD progress
+     */
+    public static final String MPD_CREATURE_NODE_NAME = "MpdCreature";
 
     private final IKwdFile kwdFile;
 
@@ -73,17 +99,6 @@ public final class HeroGateFrontEndConstructor extends RoomConstructor {
 
             switch (i) {
 
-                case 2:
-
-                    // The light beams, I dunno, there are maybe several of these here
-                    // FIXME beams is a visual effect of gem holder ???
-                    float yAngle = -FastMath.PI;
-                    Spatial obj = loadObject("3dfe_beams", assetManager, start, p);
-                    obj.rotate(0, yAngle, 0).move(0, 0.4f, 0.1f);
-                    root.attachChild(obj);
-                    animate(obj, false);
-
-                    break;
                 case 7:
                     showMpdProgress(root, start, p);
 
@@ -222,26 +237,6 @@ public final class HeroGateFrontEndConstructor extends RoomConstructor {
         return object;
     }
 
-    private void animate(Spatial object, final boolean randomizeAnimation) {
-
-        // Animate
-        object.breadthFirstTraversal(spatial -> {
-            var animComposer = spatial.getControl(AnimComposer.class);
-            if (animComposer != null) {
-                // creates a ClipAction that starts the animation
-                var action = animComposer.setCurrentAction(KmfModelLoader.DUMMY_ANIM_CLIP_NAME);
-
-		        if (randomizeAnimation) {
-                    animComposer.setGlobalSpeed(FastMath.nextRandomInt(6, 10) / 10f);
-                    animComposer.setTime(FastMath.nextRandomFloat() * action.getLength());
-		        }
-
-		        // Don't batch animated objects, seems not to work
-		        object.setBatchHint(Spatial.BatchHint.Never);
-		    }
-		});
-    }
-
     private void showMpdProgress(BatchNode root, Point start, Point p) {
         String creatureName = "";
 
@@ -269,7 +264,7 @@ public final class HeroGateFrontEndConstructor extends RoomConstructor {
             return;
         }
 
-        final Node mpdObj = new Node(creature.getName());
+        final Node mpdObj = new Node(MPD_CREATURE_NODE_NAME);
 
         // The idle animations to rotate between
         CreatureRandomAnimationControl animationControl = new CreatureRandomAnimationControl(creature, assetManager,
@@ -348,6 +343,10 @@ public final class HeroGateFrontEndConstructor extends RoomConstructor {
                 // Always hide arrows here; show them only on selectCampaignLevel screen
                 child.setCullHint(Spatial.CullHint.Always);
 
+                // Avoid stacking duplicate/stale blink controls across repeated calls
+                // (re-entering selectCampaignLevel, campaign reset, progression advancing)
+                child.removeControl(ArrowBlinkControl.class);
+
                 if (isCurrentLevel) {
                     ArrowBlinkControl control = new ArrowBlinkControl(child);
                     child.addControl(control);
@@ -422,4 +421,200 @@ public final class HeroGateFrontEndConstructor extends RoomConstructor {
         return letters.toString();
     }
 
+    /**
+     * Applies the static level textures to the campaign map: decayed
+     * ({@code _D}) for completed levels, blue highlight ({@code _E}) for the
+     * levels highlighted for the currently active level, base otherwise. Called
+     * when entering the {@code selectCampaignLevel} screen; the blue highlight
+     * is only shown while level selection is possible, unlike the decayed
+     * texture which reflects saved progress and stays visible elsewhere too
+     * (see {@link #applyProgressTextures(Node, AssetManager)}).
+     *
+     * @param mapNode the map node containing the level children
+     */
+    public static void applyLevelTextures(Node mapNode, AssetManager assetManager) {
+        Set<Integer> highlights = getHighlightedLevels();
+        for (Spatial child : mapNode.getChildren()) {
+            FrontEndLevelControl control = child.getControl(FrontEndLevelControl.class);
+            if (control == null) {
+                continue;
+            }
+            if (highlights.contains(control.getLevel().getLevel())) {
+                applyAlternativeTexture(child, "_E", assetManager);
+            } else {
+                applyProgressTexture(child, control, assetManager);
+            }
+        }
+    }
+
+    /**
+     * Applies the persistent campaign-progress texture to the campaign map:
+     * decayed ({@code _D}) for completed levels, base otherwise. Unlike the
+     * transient blue highlight ({@code _E}), this reflects saved progress and
+     * should be visible as soon as the menu scene exists, on every main menu
+     * screen, not just while {@code selectCampaignLevel} is active.
+     *
+     * @param mapNode the map node containing the level children
+     */
+    public static void applyProgressTextures(Node mapNode, AssetManager assetManager) {
+        for (Spatial child : mapNode.getChildren()) {
+            FrontEndLevelControl control = child.getControl(FrontEndLevelControl.class);
+            if (control != null) {
+                applyProgressTexture(child, control, assetManager);
+            }
+        }
+    }
+
+    private static void applyProgressTexture(Spatial child, FrontEndLevelControl control, AssetManager assetManager) {
+        if (Settings.getInstance().getLevelStatus(control.getLevel()) == Settings.LevelStatus.COMPLETED) {
+            applyAlternativeTexture(child, "_D", assetManager);
+        } else {
+            applyAlternativeTexture(child, null, assetManager);
+        }
+    }
+
+    /**
+     * Starts the blink animation on the levels highlighted for the currently
+     * active level. The levels blink between their normal and blue highlight
+     * ({@code _E}) textures for about 8 seconds and then stay blue. Called when
+     * entering the {@code selectCampaignLevel} screen.
+     *
+     * @param mapNode the map node containing the level children
+     */
+    public static void startHighlightBlink(Node mapNode, AssetManager assetManager) {
+        Set<Integer> highlights = getHighlightedLevels();
+        for (Spatial child : mapNode.getChildren()) {
+            FrontEndLevelControl control = child.getControl(FrontEndLevelControl.class);
+            if (control == null) {
+                continue;
+            }
+            child.removeControl(HighlightBlinkControl.class);
+            if (highlights.contains(control.getLevel().getLevel())) {
+                String baseTexture = findAlternativeTexture(child, null, assetManager);
+                String highlightTexture = findAlternativeTexture(child, "_E", assetManager);
+                if (baseTexture != null && highlightTexture != null) {
+                    child.addControl(new HighlightBlinkControl(child, assetManager, baseTexture, highlightTexture));
+                }
+            }
+        }
+    }
+
+    /**
+     * Stops the highlight blink animations and restores the persistent
+     * campaign-progress textures (decayed markers for completed levels stay
+     * visible). Called when leaving the {@code selectCampaignLevel} screen, as
+     * the blue highlight is only shown while level selection is possible.
+     *
+     * @param mapNode the map node containing the level children
+     */
+    public static void stopHighlightBlink(Node mapNode, AssetManager assetManager) {
+        for (Spatial child : mapNode.getChildren()) {
+            FrontEndLevelControl control = child.getControl(FrontEndLevelControl.class);
+            if (control == null) {
+                continue;
+            }
+            child.removeControl(HighlightBlinkControl.class);
+        }
+        applyProgressTextures(mapNode, assetManager);
+    }
+
+    /**
+     * Resolves the set of level numbers that should be blue highlighted for the
+     * currently active level. Empty unless at least level 5 is completed.
+     *
+     * @return the highlighted level numbers
+     */
+    private static Set<Integer> getHighlightedLevels() {
+        int activeLevel = Settings.getInstance().getNextPlayableLevel();
+        return HIGHLIGHT_BY_ACTIVE_LEVEL.getOrDefault(activeLevel, Set.of());
+    }
+
+    /**
+     * Applies the alternative texture with the given suffix to all geometries of
+     * the level that carry the alternative textures list. A {@code null} suffix
+     * restores the base texture.
+     *
+     * @param spatial the level spatial
+     * @param suffix the texture suffix, e.g. {@code "_D"}, {@code "_E"}, or
+     * {@code null} for the base
+     */
+    private static void applyAlternativeTexture(final Spatial spatial, final String suffix, AssetManager assetManager) {
+        spatial.depthFirstTraversal(new SceneGraphVisitor() {
+            @Override
+            public void visit(Spatial s) {
+                if (!(s instanceof Geometry)) {
+                    return;
+                }
+                Geometry geometry = (Geometry) s;
+                List<String> textures = geometry.getUserData(KmfModelLoader.MATERIAL_ALTERNATIVE_TEXTURES);
+                if (textures == null) {
+                    return;
+                }
+                String targetTexture = findTexture(textures, suffix);
+                if (targetTexture == null) {
+                    return;
+                }
+                Material material = geometry.getMaterial();
+                String currentTexture = material.getTextureParam("DiffuseMap").getTextureValue().getKey().getName();
+                if (!targetTexture.equals(currentTexture)) {
+                    try {
+                        Texture texture = assetManager.loadTexture(new TextureKey(targetTexture, false));
+                        material.setTexture("DiffuseMap", texture);
+                        AssetUtils.assignMapsToMaterial(assetManager, material);
+                    } catch (Exception e) {
+                        logger.log(Level.WARNING, "Failed to apply alternative texture " + targetTexture + " to " + spatial.getName() + "! ({0})", e.getMessage());
+                    }
+                }
+            }
+        });
+    }
+
+    /**
+     * Finds the texture name matching the given suffix in an alternative
+     * textures list, or the base texture when the suffix is {@code null}.
+     *
+     * @param textures the alternative texture list
+     * @param suffix the suffix to match, or {@code null} for the base texture
+     * @return the canonical texture key, or {@code null} if not found
+     */
+    private static String findTexture(List<String> textures, String suffix) {
+        for (String texture : textures) {
+            String canonical = AssetUtils.getCanonicalAssetKey(texture);
+            if (suffix == null) {
+                if (!canonical.endsWith("_D.png") && !canonical.endsWith("_E.png")) {
+                    return canonical;
+                }
+            } else if (canonical.endsWith(suffix + ".png")) {
+                return canonical;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Finds the alternative texture name matching the given suffix on any
+     * geometry of the spatial that carries the alternative textures list.
+     *
+     * @param spatial the spatial whose textures to search
+     * @param suffix the suffix to match, or {@code null} for the base texture
+     * @return the canonical texture key, or {@code null} if not found
+     */
+    private static String findAlternativeTexture(Spatial spatial, String suffix, AssetManager assetManager) {
+        final String[] found = new String[1];
+        spatial.depthFirstTraversal(new SceneGraphVisitor() {
+            @Override
+            public void visit(Spatial s) {
+                if (found[0] != null || !(s instanceof Geometry)) {
+                    return;
+                }
+                Geometry geometry = (Geometry) s;
+                List<String> textures = geometry.getUserData(KmfModelLoader.MATERIAL_ALTERNATIVE_TEXTURES);
+                if (textures == null) {
+                    return;
+                }
+                found[0] = findTexture(textures, suffix);
+            }
+        });
+        return found[0];
+    }
 }
