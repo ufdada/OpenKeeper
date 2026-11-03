@@ -77,6 +77,7 @@ public final class ModelViewerScreenController implements ScreenController {
     private final static String ID_WIREFRAME = "wireframe";
     private final static String ID_SHOW_CEILING = "showCeiling";
     private final static String ID_OVERLAY = "enableOverlay";
+    private final static String ID_LOD = "lodLevel";
     private final static String ID_EFFECT_DETAILS = "showEffectDetails";
     private final static String ID_LIT_SOLID_ROCK = "litSolidRock";
     private final static String ID_TERRAIN_AMBIENT = "terrainAmbient";
@@ -123,6 +124,7 @@ public final class ModelViewerScreenController implements ScreenController {
         if (overlays.itemCount() > 0) {
             overlays.selectItemByIndex(0);
         }
+        setLodLevels(0);
         // Fill types
         app.fillTypes();
     }
@@ -215,6 +217,40 @@ public final class ModelViewerScreenController implements ScreenController {
             if (checkBox != null && checkBox.isChecked() != enabled) {
                 checkBox.setChecked(enabled);
             }
+        }
+    }
+
+    @NiftyEventSubscriber(id = ID_LOD)
+    public void onLodChanged(final String id, final DropDownSelectionChangedEvent<String> event) {
+        // The app ignores a selection that already is in effect
+        if (event.getSelectionItemIndex() >= 0) {
+            app.setLodIndex(event.getSelectionItemIndex());
+        }
+    }
+
+    /**
+     * Fill the LOD selection for a model with the given number of LOD levels,
+     * selecting the automatic mode
+     *
+     * @param levels number of LOD levels in the model, 0 if none
+     */
+    void setLodLevels(int levels) {
+        DropDown<String> dropDown = screen.findNiftyControl(ID_LOD, DropDown.class);
+        if (dropDown == null) {
+            return;
+        }
+        dropDown.clear();
+        dropDown.addItem("Auto");
+        for (int i = 0; i < levels; i++) {
+            dropDown.addItem("LOD " + i);
+        }
+        dropDown.selectItemByIndex(0);
+    }
+
+    void setLodSelection(int index) {
+        DropDown<String> dropDown = screen.findNiftyControl(ID_LOD, DropDown.class);
+        if (dropDown != null && dropDown.getSelectedIndex() != index) {
+            dropDown.selectItemByIndex(index);
         }
     }
 

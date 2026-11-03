@@ -22,7 +22,6 @@ import com.jme3.anim.tween.action.BaseAction;
 import com.jme3.app.SimpleApplication;
 import com.jme3.asset.AssetKey;
 import com.jme3.asset.plugins.FileLocator;
-import com.jme3.font.BitmapText;
 import com.jme3.input.KeyInput;
 import com.jme3.input.RawInputListener;
 import com.jme3.input.controls.ActionListener;
@@ -167,7 +166,6 @@ public final class ModelViewer extends SimpleApplication {
     private boolean lodAuto = true;
     private int lodLevel = 0;
     private final Set<Integer> pressedKeys = new HashSet<>();
-    private BitmapText lodText;
     private List<String> models;
     private List<String> maps;
     private IKwdFile kwdFile;
@@ -402,11 +400,6 @@ public final class ModelViewer extends SimpleApplication {
 
         // LOD level control, L steps to lower and Shift+L to higher LOD level
         inputManager.addRawInputListener(rawInputListener);
-        lodText = new BitmapText(guiFont, false);
-        lodText.setSize(guiFont.getCharSet().getRenderedSize());
-        lodText.setLocalTranslation(10, cam.getHeight() - lodText.getLineHeight() - 10, 0);
-        lodText.setText("LOD: auto");
-        guiNode.attachChild(lodText);
 
         // Open a KMF model if set
         if (kmfModel != null) {
@@ -927,78 +920,68 @@ public final class ModelViewer extends SimpleApplication {
     }
 
     /**
-     * Change the forced LOD level of the shown model. A positive delta steps to
+     * Step the forced LOD level of the shown model. A positive delta steps to
      * a lower (coarser) LOD level and a negative delta to a higher (finer) one.
-     * The first press takes control away from the auto LOD selection, pressing
-     * higher than the most detailed level returns back to automatic selection.
+     * Index 0 of the LOD selection is the automatic selection.
      *
      * @param delta direction to step, 1 for lower, -1 for higher detail
      */
     private void changeLod(int delta) {
+        int maxLods = getMaxLodLevels(rootNode.getChild(ModelViewer.NODE_NAME));
+        if (maxLods == 0) {
+            return;
+        }
+        setLodIndex(Math.max(0, Math.min(maxLods, getLodIndex() + delta)));
+    }
+
+    /**
+     * The selection index of the current LOD state, 0 is auto and N is LOD
+     * level N - 1
+     */
+    private int getLodIndex() {
+        return lodAuto ? 0 : lodLevel + 1;
+    }
+
+    /**
+     * Apply a LOD selection coming from the options (or the keyboard).
+     *
+     * @param index 0 for auto, N for LOD level N - 1
+     */
+    void setLodIndex(int index) {
         Spatial spat = rootNode.getChild(ModelViewer.NODE_NAME);
-        if (spat == null) {
+        if (spat == null || index == getLodIndex() || index > getMaxLodLevels(spat)) {
             return;
         }
 
-        // Gather the LOD geometries and the maximum number of LOD levels
-        final int[] maxLods = { 0 };
-        final List<Geometry> geometries = new ArrayList<>();
+        lodAuto = index <= 0;
+        lodLevel = Math.max(0, index - 1);
         spat.depthFirstTraversal((Spatial spatial) -> {
-            if (spatial instanceof Geometry geometry) {
-                int numLevels = geometry.getMesh().getNumLodLevels();
-                if (numLevels > 0) {
-                    maxLods[0] = Math.max(maxLods[0], numLevels);
-                    geometries.add(geometry);
+            if (spatial instanceof Geometry geometry && geometry.getMesh().getNumLodLevels() > 0) {
+                LodControl lodControl = geometry.getControl(LodControl.class);
+                if (lodControl != null) {
+                    lodControl.setEnabled(lodAuto);
+                }
+                if (!lodAuto) {
+                    geometry.setLodLevel(Math.min(lodLevel, geometry.getMesh().getNumLodLevels() - 1));
                 }
             }
         });
+        screen.setLodSelection(getLodIndex());
+    }
 
-        if (geometries.isEmpty()) {
-            if (lodText != null) {
-                lodText.setText("LOD: none (no LOD levels)");
-            }
-            return;
-        }
-
-        if (lodAuto) {
-
-            // Take manual control of the LOD level
-            lodAuto = false;
-            lodLevel = (delta > 0) ? 1 : 0;
-            for (Geometry geometry : geometries) {
-                LodControl lodControl = geometry.getControl(LodControl.class);
-                if (lodControl != null) {
-                    lodControl.setEnabled(false);
+    /**
+     * @return the maximum number of LOD levels in the model, 0 if none
+     */
+    private static int getMaxLodLevels(Spatial spat) {
+        final int[] maxLods = {0};
+        if (spat != null) {
+            spat.depthFirstTraversal((Spatial spatial) -> {
+                if (spatial instanceof Geometry geometry) {
+                    maxLods[0] = Math.max(maxLods[0], geometry.getMesh().getNumLodLevels());
                 }
-            }
-        } else if (lodLevel == 0 && delta < 0) {
-
-            // At the most detailed level, give control back to the auto selection
-            lodAuto = true;
-            for (Geometry geometry : geometries) {
-                LodControl lodControl = geometry.getControl(LodControl.class);
-                if (lodControl != null) {
-                    lodControl.setEnabled(true);
-                }
-            }
-        } else {
-            lodLevel = Math.max(0, Math.min(maxLods[0] - 1, lodLevel + delta));
+            });
         }
-
-        if (!lodAuto) {
-            final int level = lodLevel;
-            for (Geometry geometry : geometries) {
-                geometry.setLodLevel(Math.min(level, geometry.getMesh().getNumLodLevels() - 1));
-            }
-        }
-
-        if (lodText != null) {
-            if (lodAuto) {
-                lodText.setText("LOD: auto");
-            } else {
-                lodText.setText(String.format("LOD %d/%d", lodLevel, maxLods[0] - 1));
-            }
-        }
+        return maxLods[0];
     }
 
     /**
@@ -1020,9 +1003,7 @@ public final class ModelViewer extends SimpleApplication {
             }
         });
 
-        if (lodText != null) {
-            lodText.setText("LOD: auto");
-        }
+        screen.setLodLevels(getMaxLodLevels(spat));
     }
 
     /**

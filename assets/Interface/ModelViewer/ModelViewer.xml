@@ -18,9 +18,13 @@
                     <text style="text" text="Filter" width="50px" valign="center"/>
                     <control name="textfield" id="filter" text="" maxLength="64" width="*"/>
                 </panel>
-                <panel id="selectionOptions" childLayout="vertical" width="100%" height="236px"
+                <panel id="selectionOptions" childLayout="vertical" width="100%" height="272px"
                        padding="8px" backgroundColor="#000f">
                     <text style="text" text="Options" width="100%" height="20px" textHAlign="left"/>
+                    <panel childLayout="horizontal" width="100%" height="28px">
+                        <text style="text" text="LOD (L)" width="50%" valign="center" textHAlign="left"/>
+                        <control name="dropDown" id="lodLevel" displayItems="8" width="*" height="28px"/>
+                    </panel>
                     <control name="viewerOption" id="autoRotate" label="Auto-rotate" shortcut="Alt+R"/>
                     <control name="viewerOption" id="showNormals" label="Show normals" shortcut="Alt+N"/>
                     <control name="viewerOption" id="wireframe" label="Wireframe" shortcut="Alt+T"/>
