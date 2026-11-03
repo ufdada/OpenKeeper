@@ -16,6 +16,9 @@
  */
 package toniarts.openkeeper.view.map;
 
+import com.jme3.anim.AnimClip;
+import com.jme3.anim.AnimComposer;
+import com.jme3.anim.AnimTrack;
 import com.jme3.scene.BatchNode;
 import com.jme3.scene.Geometry;
 import com.jme3.scene.Mesh;
@@ -31,9 +34,12 @@ import java.nio.IntBuffer;
 import java.nio.ShortBuffer;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.regex.Pattern;
+import toniarts.openkeeper.animation.PoseTrack;
 
 /**
  * The models have the vertices of all of their LOD levels in the vertex
@@ -53,6 +59,11 @@ public final class BatchVertexCompactor {
      */
     private static final Map<Mesh, Mesh> COMPACTED = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Mesh NOT_COMPACTABLE = new Mesh();
+    private static final Set<VertexBuffer.Type> COMPACTABLE_TYPES = EnumSet.of(VertexBuffer.Type.Position,
+            VertexBuffer.Type.Normal, VertexBuffer.Type.Tangent, VertexBuffer.Type.Binormal, VertexBuffer.Type.Color,
+            VertexBuffer.Type.TexCoord, VertexBuffer.Type.TexCoord2, VertexBuffer.Type.TexCoord3,
+            VertexBuffer.Type.TexCoord4, VertexBuffer.Type.BindPosePosition,
+            VertexBuffer.Type.BindPoseNormal, VertexBuffer.Type.BindPoseTangent);
     private static final Pattern BATCH_NAME = Pattern.compile(".*-batch[0-9]+");
 
     private BatchVertexCompactor() {
@@ -66,7 +77,8 @@ public final class BatchVertexCompactor {
      */
     public static void compact(BatchNode batchNode) {
         batchNode.depthFirstTraversal((Spatial spatial) -> {
-            if (spatial instanceof Geometry geometry && !geometry.isGrouped() && !isBatch(geometry)) {
+            if (spatial instanceof Geometry geometry && !geometry.isGrouped() && !isBatch(geometry)
+                    && !isPoseAnimated(geometry)) {
                 Mesh compacted = getCompacted(geometry.getMesh());
                 if (compacted != null) {
                     // The LOD control has nothing to work with in the compacted mesh
@@ -75,6 +87,27 @@ public final class BatchVertexCompactor {
                 }
             }
         });
+    }
+
+    /**
+     * The pose animations move the vertices of the mesh by their index, such
+     * meshes must stay as they are.
+     */
+    private static boolean isPoseAnimated(Geometry geometry) {
+        for (Spatial spatial = geometry; spatial != null; spatial = spatial.getParent()) {
+            AnimComposer composer = spatial.getControl(AnimComposer.class);
+            if (composer == null) {
+                continue;
+            }
+            for (AnimClip clip : composer.getAnimClips()) {
+                for (AnimTrack<?> track : clip.getTracks()) {
+                    if (track instanceof PoseTrack pose && pose.getTarget() == geometry) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -135,6 +168,10 @@ public final class BatchVertexCompactor {
             VertexBuffer.Type type = buffer.getBufferType();
             if (type == VertexBuffer.Type.Index) {
                 continue;
+            }
+            if (!COMPACTABLE_TYPES.contains(type)) {
+                // For example the bind pose of the pose animations refers to the vertices by their index
+                return null;
             }
             if (buffer.getNumElements() != vertexCount || buffer.getStride() != 0 || buffer.getOffset() != 0
                     || buffer.getInstanceSpan() != 0 || buffer.getData() == null) {
